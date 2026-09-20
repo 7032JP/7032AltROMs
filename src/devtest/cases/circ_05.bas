@@ -1,0 +1,17 @@
+0 REM AltROMs test - MIT, own work.
+1 REM CIRCLE の機能 (第 8 引数)。PSET / PRESET / AND / OR / XOR を指定でき、
+2 REM 省略したときは PSET とみなす。塗りつぶし (F) を指定したときも、線を引く
+3 REM ときに機能が効く。中心を通る 1 行の点灯数を POINT で数え、PRESET を
+4 REM 指定した回で消えることを見る。
+10 CLS
+20 CIRCLE(160,100),40,7,,,,F
+30 GOSUB 900:A=C
+40 CIRCLE(160,100),40,7,,,,F,PRESET
+50 GOSUB 900:B=C
+60 CIRCLE(160,100),40,7,,,,F,PSET
+70 GOSUB 900:D=C
+80 CLS:PRINT A;B;D
+90 END
+900 C=0
+910 FOR I=120 TO 200:C=C-POINT(I,100):NEXT
+920 RETURN

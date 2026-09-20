@@ -1,0 +1,10 @@
+? AB:CD
+[AB][CD] 2  2
+?  12 : 34
+ 12  34
+? AB::CD
+[AB][][CD] 0
+? "A:B",CD
+[A:B][CD] 3
+
+Ready

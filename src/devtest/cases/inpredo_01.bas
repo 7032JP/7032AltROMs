@@ -1,0 +1,8 @@
+0 REM AltROMs test - MIT, own work.
+10 INPUT A,B
+20 PRINT "GOT";A;B
+30 INPUT C$
+40 PRINT "[";C$;"]"
+50 INPUT "N";D,E
+60 PRINT "GOT";D;E
+70 END

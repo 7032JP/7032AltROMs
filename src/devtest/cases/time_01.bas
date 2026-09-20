@@ -1,0 +1,15 @@
+0 REM AltROMs test - MIT, own work.
+1 REM ON TIME GOSUB / TIME "hh:mm:ss" / TIME ON: 時計を合わせ、割込予約時刻を
+2 REM 決めて許可すると、その時刻に登録行へ GOSUB として入る。RETURN に行番号を
+3 REM 書けばその行から再開する。TIME OFF の間は割込まない。
+10 TIME$="07:29:58"
+20 ON TIME GOSUB 100
+30 TIME "07:30:00"
+40 TIME ON
+50 GOTO 50
+60 PRINT "BACK"
+70 TIME$="07:29:58":TIME "07:30:00":TIME OFF
+80 IF TIME$<"07:30:03" THEN 80
+90 PRINT "A";A:END
+100 PRINT "HIT":A=A+1
+110 RETURN 60

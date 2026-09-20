@@ -1,0 +1,15 @@
+0 REM AltROMs test - MIT, own work.
+10 A#=1.5
+20 A%=123
+30 A!=2.5
+40 A$="XY"
+50 PRINT A#
+60 PRINT A%
+70 PRINT A!
+80 PRINT A$
+90 B$="P"
+100 B#=3.5
+110 B%=7
+120 PRINT B$
+130 PRINT B#
+140 PRINT B%

@@ -1,0 +1,9 @@
+0 REM AltROMs test - MIT, own work.
+1 REM 基数付き定数 (&H / &O) の値は符号なしの 16 ビット (0-65535)。
+2 REM 整数の上限を超える値は実数として持つので、そのまま計算にも使える。
+10 PRINT &H7FFF;&H8000;&HFFFF
+20 PRINT &O77777;&O100000;&O177777
+30 PRINT &H8000+1;&HFFFF-&HFFFE;-&H8000
+40 PRINT &HFFFF/3;&H8000*2
+50 PRINT VAL("&H8000");VAL("&HFFFF")
+60 PRINT HEX$(&H8000);" ";OCT$(&HFFFF)

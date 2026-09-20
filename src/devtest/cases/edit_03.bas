@@ -1,0 +1,6 @@
+0 REM AltROMs test - MIT, own work.
+10 PRINT "A1"
+30 PRINT "C1"
+20 PRINT "B1"
+5 PRINT "Z0"
+40 PRINT "D1"

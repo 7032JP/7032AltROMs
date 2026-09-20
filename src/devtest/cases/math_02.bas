@@ -1,0 +1,11 @@
+0 REM AltROMs test - MIT, own work.
+1 REM 数値関数 (初等関数): SQR / SIN / COS / TAN / EXP / LOG / ATN と実数べき乗。
+2 REM 負数の SQR と、負の底に小数の指数を与えたべき乗は誤り 5 になる。
+10 PRINT SQR(2);SIN(1.570796);COS(0);TAN(.785398)
+20 PRINT EXP(1);LOG(2.718281);ATN(1)
+30 PRINT 2^0.5;2^-2
+40 ON ERROR GOTO 900
+50 E=0:Q=SQR(-1):PRINT "E";E
+60 E=0:Q=(-2)^0.5:PRINT "E";E
+70 END
+900 E=ERR:RESUME NEXT

@@ -1,0 +1,14 @@
+? 12
+?Redo From Start
+? 1,2
+GOT 1  2
+? AB,CD
+?Redo From Start
+? ZZ
+[ZZ]
+N?
+?Redo From Start
+N? 3,4
+GOT 3  4
+
+Ready

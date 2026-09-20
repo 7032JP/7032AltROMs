@@ -1,0 +1,141 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="610" viewBox="0 0 900 610">
+<title>FM77AV 系 メモリマップ</title>
+<rect x="0" y="0" width="900" height="610" fill="#ffffff"/>
+<text x="450.0" y="26" font-family="sans-serif" font-size="16" text-anchor="middle" font-weight="bold">FM77AV 系 メモリマップ</text>
+<text x="190.0" y="52" font-family="sans-serif" font-size="13" text-anchor="middle" font-weight="bold">メイン CPU（6809）</text>
+<rect x="70" y="62" width="240" height="78" fill="#e6e6e6" stroke="#000" stroke-width="1"/>
+<text x="62" y="73" font-family="monospace" font-size="11" text-anchor="end">$0000</text>
+<text x="62" y="137" font-family="monospace" font-size="11" text-anchor="end">$5FFF</text>
+<text x="76" y="77" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">RAM 24 KB</text>
+<text x="76" y="92" font-family="sans-serif" font-size="12" text-anchor="start">ユーザー領域・BASIC のワークエリア</text>
+<text x="76" y="107" font-family="sans-serif" font-size="12" text-anchor="start">$3000〜: AV ブートイメージ 640 B</text>
+<text x="76" y="122" font-family="sans-serif" font-size="12" text-anchor="start">（ディスク起動時に転送）</text>
+<rect x="70" y="140" width="240" height="64" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="62" y="151" font-family="monospace" font-size="11" text-anchor="end">$6000</text>
+<text x="62" y="201" font-family="monospace" font-size="11" text-anchor="end">$7FFF</text>
+<text x="76" y="155" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">イニシエート ROM 8 KB</text>
+<text x="76" y="170" font-family="sans-serif" font-size="12" text-anchor="start">（オーバレイ。電源 ON 直後だけ現れ、</text>
+<text x="76" y="185" font-family="sans-serif" font-size="12" text-anchor="start">起動後は RAM。内部の配置は右の図）</text>
+<rect x="70" y="204" width="240" height="120" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="62" y="215" font-family="monospace" font-size="11" text-anchor="end">$8000</text>
+<text x="62" y="321" font-family="monospace" font-size="11" text-anchor="end">$FBFF</text>
+<text x="76" y="219" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">7tbasic3.rom（BASIC ROM）</text>
+<text x="76" y="234" font-family="sans-serif" font-size="12" text-anchor="start">31744 B</text>
+<text x="76" y="249" font-family="sans-serif" font-size="12" text-anchor="start">$FD0F への読み書きで裏 RAM と切替</text>
+<rect x="70" y="324" width="240" height="28" fill="#e6e6e6" stroke="#000" stroke-width="1"/>
+<text x="62" y="335" font-family="monospace" font-size="11" text-anchor="end">$FC00</text>
+<text x="62" y="349" font-family="monospace" font-size="11" text-anchor="end">$FC7F</text>
+<text x="76" y="339" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">RAM 128 B</text>
+<rect x="70" y="352" width="240" height="40" fill="#f2f2f2" stroke="#000" stroke-width="1"/>
+<text x="62" y="363" font-family="monospace" font-size="11" text-anchor="end">$FC80</text>
+<text x="62" y="389" font-family="monospace" font-size="11" text-anchor="end">$FCFF</text>
+<text x="76" y="367" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">共有 RAM 128 B</text>
+<text x="76" y="382" font-family="sans-serif" font-size="12" text-anchor="start">= サブ CPU の $D380〜$D3FF</text>
+<rect x="70" y="392" width="240" height="52" fill="#cfcfcf" stroke="#000" stroke-width="1"/>
+<text x="62" y="403" font-family="monospace" font-size="11" text-anchor="end">$FD00</text>
+<text x="62" y="441" font-family="monospace" font-size="11" text-anchor="end">$FDFF</text>
+<text x="76" y="407" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">I/O</text>
+<text x="76" y="422" font-family="sans-serif" font-size="12" text-anchor="start">MMR・サブ CPU 制御・表示制御</text>
+<text x="76" y="437" font-family="sans-serif" font-size="12" text-anchor="start">$FD13: サブシステム ROM の選択</text>
+<rect x="70" y="444" width="240" height="84" fill="#e6e6e6" stroke="#000" stroke-width="1"/>
+<text x="62" y="455" font-family="monospace" font-size="11" text-anchor="end">$FE00</text>
+<text x="62" y="525" font-family="monospace" font-size="11" text-anchor="end">$FFFF</text>
+<text x="76" y="459" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">起動イメージ 512 B（RAM）</text>
+<text x="76" y="474" font-family="sans-serif" font-size="12" text-anchor="start">イニシエート ROM のイメージを転送</text>
+<text x="76" y="489" font-family="sans-serif" font-size="12" text-anchor="start">（$1800: BASIC 起動、</text>
+<text x="76" y="504" font-family="sans-serif" font-size="12" text-anchor="start">　$1A00: ディスク起動）</text>
+<text x="76" y="519" font-family="sans-serif" font-size="12" text-anchor="start">末尾は 6809 ベクタ表</text>
+<text x="520.0" y="52" font-family="sans-serif" font-size="13" text-anchor="middle" font-weight="bold">サブ CPU（6809）</text>
+<rect x="400" y="62" width="240" height="110" fill="#e6e6e6" stroke="#000" stroke-width="1"/>
+<text x="392" y="73" font-family="monospace" font-size="11" text-anchor="end">$0000</text>
+<text x="392" y="169" font-family="monospace" font-size="11" text-anchor="end">$BFFF</text>
+<text x="406" y="77" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">VRAM 48 KB</text>
+<text x="406" y="92" font-family="sans-serif" font-size="12" text-anchor="start">3 プレーン × 16 KB</text>
+<rect x="400" y="172" width="240" height="32" fill="#e6e6e6" stroke="#000" stroke-width="1"/>
+<text x="392" y="183" font-family="monospace" font-size="11" text-anchor="end">$C000</text>
+<text x="392" y="201" font-family="monospace" font-size="11" text-anchor="end">$CF9F</text>
+<text x="406" y="187" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">コンソールバッファ</text>
+<rect x="400" y="204" width="240" height="32" fill="#e6e6e6" stroke="#000" stroke-width="1"/>
+<text x="392" y="215" font-family="monospace" font-size="11" text-anchor="end">$CFA0</text>
+<text x="392" y="233" font-family="monospace" font-size="11" text-anchor="end">$D37F</text>
+<text x="406" y="219" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">ワークエリア</text>
+<rect x="400" y="236" width="240" height="40" fill="#f2f2f2" stroke="#000" stroke-width="1"/>
+<text x="392" y="247" font-family="monospace" font-size="11" text-anchor="end">$D380</text>
+<text x="392" y="273" font-family="monospace" font-size="11" text-anchor="end">$D3FF</text>
+<text x="406" y="251" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">共有 RAM 128 B</text>
+<text x="406" y="266" font-family="sans-serif" font-size="12" text-anchor="start">= メイン CPU の $FC80〜$FCFF</text>
+<rect x="400" y="276" width="240" height="36" fill="#cfcfcf" stroke="#000" stroke-width="1"/>
+<text x="392" y="287" font-family="monospace" font-size="11" text-anchor="end">$D400</text>
+<text x="392" y="309" font-family="monospace" font-size="11" text-anchor="end">$D7FF</text>
+<text x="406" y="291" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">サブ CPU の I/O</text>
+<rect x="400" y="312" width="240" height="52" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="392" y="323" font-family="monospace" font-size="11" text-anchor="end">$D800</text>
+<text x="392" y="361" font-family="monospace" font-size="11" text-anchor="end">$DFFF</text>
+<text x="406" y="327" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">CG バンク 2 KB</text>
+<text x="406" y="342" font-family="sans-serif" font-size="12" text-anchor="start">subsyscg.rom（2 KB × 4 バンク）</text>
+<text x="406" y="357" font-family="sans-serif" font-size="12" text-anchor="start">のうち 1 バンクを載せる</text>
+<rect x="400" y="364" width="240" height="102" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="392" y="375" font-family="monospace" font-size="11" text-anchor="end">$E000</text>
+<text x="392" y="463" font-family="monospace" font-size="11" text-anchor="end">$FFFF</text>
+<text x="406" y="379" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">サブシステム ROM 8 KB</text>
+<text x="406" y="394" font-family="sans-serif" font-size="12" text-anchor="start">$FD13 で一方を選択</text>
+<text x="406" y="409" font-family="sans-serif" font-size="12" text-anchor="start">（切替でサブ CPU を初期化。描画先が違う）</text>
+<rect x="408" y="426" width="108.0" height="34" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="462.0" y="440" font-family="monospace" font-size="11" text-anchor="middle">subsys_a.rom</text>
+<text x="462.0" y="454" font-family="sans-serif" font-size="11" text-anchor="middle">Type-A の位置</text>
+<rect x="524.0" y="426" width="108.0" height="34" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="578.0" y="440" font-family="monospace" font-size="11" text-anchor="middle">subsys_b.rom</text>
+<text x="578.0" y="454" font-family="sans-serif" font-size="11" text-anchor="middle">Type-B の位置</text>
+<text x="777.5" y="52" font-family="sans-serif" font-size="13" text-anchor="middle" font-weight="bold">イニシエート ROM の内部</text>
+<text x="777.5" y="66" font-family="sans-serif" font-size="10" text-anchor="middle">（ファイル先頭からの位置。変種で一部異なる）</text>
+<rect x="670" y="72" width="215" height="26" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="674" y="85" font-family="monospace" font-size="10" text-anchor="start">$0000</text>
+<text x="714" y="85" font-family="sans-serif" font-size="10" text-anchor="start">初期化コード</text>
+<rect x="670" y="98" width="215" height="22" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="674" y="111" font-family="monospace" font-size="10" text-anchor="start">$0B00</text>
+<text x="714" y="111" font-family="sans-serif" font-size="10" text-anchor="start">機種識別域 20 B</text>
+<rect x="670" y="120" width="215" height="22" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="674" y="133" font-family="monospace" font-size="10" text-anchor="start">$0C00</text>
+<text x="714" y="133" font-family="sans-serif" font-size="10" text-anchor="start">FM 音源の音色表 2618 B</text>
+<rect x="670" y="142" width="215" height="22" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="674" y="155" font-family="monospace" font-size="10" text-anchor="start">$1800</text>
+<text x="714" y="155" font-family="sans-serif" font-size="10" text-anchor="start">BASIC 起動イメージ 512 B</text>
+<rect x="670" y="164" width="215" height="22" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="674" y="177" font-family="monospace" font-size="10" text-anchor="start">$1A00</text>
+<text x="714" y="177" font-family="sans-serif" font-size="10" text-anchor="start">ディスク起動イメージ 512 B</text>
+<rect x="670" y="186" width="215" height="22" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="674" y="199" font-family="monospace" font-size="10" text-anchor="start">$1C00</text>
+<text x="714" y="199" font-family="sans-serif" font-size="10" text-anchor="start">AV ブートイメージ 640 B</text>
+<rect x="670" y="208" width="215" height="18" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="674" y="221" font-family="monospace" font-size="10" text-anchor="start">$1FFE</text>
+<text x="714" y="221" font-family="sans-serif" font-size="10" text-anchor="start">リセットベクタ</text>
+<text x="670" y="262" font-family="sans-serif" font-size="10" text-anchor="start">$1800・$1A00 のイメージは $FE00 へ、</text>
+<text x="670" y="275" font-family="sans-serif" font-size="10" text-anchor="start">$1C00 のイメージは $3000 へ転送</text>
+<text x="777.5" y="302" font-family="sans-serif" font-size="13" text-anchor="middle" font-weight="bold">アドレス空間に現れない ROM</text>
+<rect x="670" y="308" width="215" height="52" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="674" y="322" font-family="sans-serif" font-size="10" text-anchor="start" font-weight="bold">kanji.rom 131072 B</text>
+<text x="674" y="335" font-family="sans-serif" font-size="10" text-anchor="start">16x16 漢字フォント 第一水準</text>
+<text x="674" y="348" font-family="sans-serif" font-size="10" text-anchor="start">4096 枠 × 32 B。レジスタ経由で読み出す</text>
+<rect x="670" y="366" width="215" height="52" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="674" y="380" font-family="sans-serif" font-size="10" text-anchor="start" font-weight="bold">kanji2.rom 131072 B</text>
+<text x="674" y="393" font-family="sans-serif" font-size="10" text-anchor="start">16x16 漢字フォント 第二水準</text>
+<text x="674" y="406" font-family="sans-serif" font-size="10" text-anchor="start">4096 枠 × 32 B。レジスタ経由で読み出す</text>
+<rect x="670" y="424" width="215" height="66" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="674" y="438" font-family="sans-serif" font-size="10" text-anchor="start" font-weight="bold">extsub.rom 49152 B</text>
+<text x="674" y="451" font-family="sans-serif" font-size="10" text-anchor="start">拡張サブシステム（AV40EX / AV40SX 用）</text>
+<text x="674" y="464" font-family="sans-serif" font-size="10" text-anchor="start">24 KB イメージ × 2 セット</text>
+<text x="674" y="477" font-family="sans-serif" font-size="10" text-anchor="start">= CGRAM 16 KB + 実行ページ 8 KB</text>
+<rect x="670" y="496" width="215" height="38" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="674" y="510" font-family="sans-serif" font-size="10" text-anchor="start" font-weight="bold">dicrom.rom 262144 B</text>
+<text x="674" y="523" font-family="sans-serif" font-size="10" text-anchor="start">辞書 ROM の枠（AV40EX / AV40SX 用）</text>
+<rect x="70" y="544" width="18" height="12" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="94" y="555" font-family="sans-serif" font-size="12" text-anchor="start">ROM</text>
+<rect x="190" y="544" width="18" height="12" fill="#e6e6e6" stroke="#000" stroke-width="1"/>
+<text x="214" y="555" font-family="sans-serif" font-size="12" text-anchor="start">RAM</text>
+<rect x="310" y="544" width="18" height="12" fill="#f2f2f2" stroke="#000" stroke-width="1"/>
+<text x="334" y="555" font-family="sans-serif" font-size="12" text-anchor="start">共有 RAM</text>
+<rect x="430" y="544" width="18" height="12" fill="#cfcfcf" stroke="#000" stroke-width="1"/>
+<text x="454" y="555" font-family="sans-serif" font-size="12" text-anchor="start">I/O</text>
+<text x="70" y="578" font-family="sans-serif" font-size="11" text-anchor="start">各領域の高さは寸法に比例していません。イニシエート ROM は initiate / initbase / initav1 / initex のうち 1 本を置きます。</text>
+<text x="70" y="594" font-family="sans-serif" font-size="11" text-anchor="start">FM-7 互換モードではサブ CPU 側に subsys_c.rom を使います。その配置は FM-7 系の図のとおりです。</text>
+</svg>

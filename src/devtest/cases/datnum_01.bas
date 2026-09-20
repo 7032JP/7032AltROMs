@@ -1,0 +1,6 @@
+0 REM AltROMs test - MIT, own work.
+10 PRINT "S"
+20 DATA 1,,3
+30 READ A,B,C
+40 PRINT A;B;C
+50 END

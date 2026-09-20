@@ -1,0 +1,11 @@
+0 REM AltROMs test - MIT, own work.
+1 REM 画面比較: LINE の各形式。始点省略 (-(X,Y) は前回の点から)、B (枠)、
+2 REM BF (塗り箱)、PRESET (背景色で消す)、縦線。
+10 CLS
+20 LINE (0,0)-(100,100)
+30 LINE -(200,100),PSET,5
+40 LINE (250,20)-(350,80),PSET,6,B
+50 LINE (360,20)-(460,80),PSET,3,BF
+60 LINE (380,40)-(440,60),PRESET
+70 LINE (500,0)-(500,199),PSET,7
+80 GOTO 80

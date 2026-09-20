@@ -1,0 +1,11 @@
+0 REM AltROMs test - MIT, own work.
+10 ON ERROR GOTO 100
+20 READ A$,B$,C$
+30 PRINT "[";A$;"][";B$;"][";C$;"]";LEN(B$)
+40 READ D
+50 PRINT "NG";D
+60 END
+70 DATA A,,B
+80 DATA 12X
+100 PRINT "TRAP";ERR;ERL
+110 END

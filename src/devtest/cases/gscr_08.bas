@@ -1,0 +1,17 @@
+0 REM AltROMs test - MIT, own work.
+1 REM 画面比較: COLOR (既定の描画色)、COLOR=(パレット,カラー) のパレット
+2 REM 変更、SCREEN の書き込み面・表示面のマスク。面 1 だけへ描いた色 7 は
+3 REM 青面にだけ載り、表示面から面 1 を外すと青の寄与が消える。
+10 CLS
+20 COLOR 5
+30 LINE (0,0)-(99,50),PSET,1,BF
+40 LINE (100,0)-(199,50),PSET,2,BF
+50 LINE (200,0)-(299,50),PSET,4,BF
+60 PSET (320,25)
+70 COLOR=(2,6)
+80 SCREEN 1,7
+90 LINE (0,100)-(99,150),PSET,7,BF
+100 SCREEN 7,7
+110 LINE (200,100)-(299,150),PSET,7,BF
+120 SCREEN ,6
+130 GOTO 130

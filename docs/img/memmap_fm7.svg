@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="640" viewBox="0 0 900 640">
+<title>FM-7 系 メモリマップ</title>
+<rect x="0" y="0" width="900" height="640" fill="#ffffff"/>
+<text x="450.0" y="26" font-family="sans-serif" font-size="16" text-anchor="middle" font-weight="bold">FM-7 系 メモリマップ</text>
+<text x="245.0" y="52" font-family="sans-serif" font-size="13" text-anchor="middle" font-weight="bold">メイン CPU（6809）</text>
+<rect x="110" y="62" width="270" height="140" fill="#e6e6e6" stroke="#000" stroke-width="1"/>
+<text x="100" y="73" font-family="monospace" font-size="11" text-anchor="end">$0000</text>
+<text x="100" y="199" font-family="monospace" font-size="11" text-anchor="end">$7FFF</text>
+<text x="116" y="77" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">RAM 32 KB</text>
+<text x="116" y="92" font-family="sans-serif" font-size="12" text-anchor="start">ユーザー領域・BASIC のワークエリア</text>
+<rect x="110" y="202" width="270" height="140" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="100" y="213" font-family="monospace" font-size="11" text-anchor="end">$8000</text>
+<text x="100" y="339" font-family="monospace" font-size="11" text-anchor="end">$FBFF</text>
+<text x="116" y="217" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">7tbasic3.rom（BASIC ROM）31744 B</text>
+<text x="116" y="232" font-family="sans-serif" font-size="12" text-anchor="start">$FD0F への読み書きで裏 RAM と切替</text>
+<rect x="110" y="342" width="270" height="28" fill="#e6e6e6" stroke="#000" stroke-width="1"/>
+<text x="100" y="353" font-family="monospace" font-size="11" text-anchor="end">$FC00</text>
+<text x="100" y="367" font-family="monospace" font-size="11" text-anchor="end">$FC7F</text>
+<text x="116" y="357" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">RAM 128 B</text>
+<rect x="110" y="370" width="270" height="40" fill="#f2f2f2" stroke="#000" stroke-width="1"/>
+<text x="100" y="381" font-family="monospace" font-size="11" text-anchor="end">$FC80</text>
+<text x="100" y="407" font-family="monospace" font-size="11" text-anchor="end">$FCFF</text>
+<text x="116" y="385" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">共有 RAM 128 B</text>
+<text x="116" y="400" font-family="sans-serif" font-size="12" text-anchor="start">= サブ CPU の $D380〜$D3FF</text>
+<rect x="110" y="410" width="270" height="40" fill="#cfcfcf" stroke="#000" stroke-width="1"/>
+<text x="100" y="421" font-family="monospace" font-size="11" text-anchor="end">$FD00</text>
+<text x="100" y="447" font-family="monospace" font-size="11" text-anchor="end">$FDFF</text>
+<text x="116" y="425" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">I/O</text>
+<text x="116" y="440" font-family="sans-serif" font-size="12" text-anchor="start">キー・カセット・サブ CPU 制御・表示制御</text>
+<rect x="110" y="450" width="270" height="98" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="100" y="461" font-family="monospace" font-size="11" text-anchor="end">$FE00</text>
+<text x="100" y="545" font-family="monospace" font-size="11" text-anchor="end">$FFFF</text>
+<text x="116" y="465" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">ブート ROM 512 B</text>
+<text x="116" y="480" font-family="sans-serif" font-size="12" text-anchor="start">boot_bas.rom または boot_dos.rom</text>
+<rect x="210" y="496" width="164" height="16" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="214" y="507" font-family="monospace" font-size="10" text-anchor="start">$FE00</text>
+<text x="260" y="507" font-family="sans-serif" font-size="10" text-anchor="start">コード・データ 480 B</text>
+<rect x="210" y="512" width="164" height="16" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="214" y="523" font-family="monospace" font-size="10" text-anchor="start">$FFE0</text>
+<text x="260" y="523" font-family="sans-serif" font-size="10" text-anchor="start">ワークエリア 16 B</text>
+<rect x="210" y="528" width="164" height="16" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="214" y="539" font-family="monospace" font-size="10" text-anchor="start">$FFF0</text>
+<text x="260" y="539" font-family="sans-serif" font-size="10" text-anchor="start">6809 ベクタ表 16 B</text>
+<text x="695.0" y="52" font-family="sans-serif" font-size="13" text-anchor="middle" font-weight="bold">サブ CPU（6809）</text>
+<rect x="560" y="62" width="270" height="140" fill="#e6e6e6" stroke="#000" stroke-width="1"/>
+<text x="550" y="73" font-family="monospace" font-size="11" text-anchor="end">$0000</text>
+<text x="550" y="199" font-family="monospace" font-size="11" text-anchor="end">$BFFF</text>
+<text x="566" y="77" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">VRAM 48 KB</text>
+<text x="566" y="92" font-family="sans-serif" font-size="12" text-anchor="start">3 プレーン × 16 KB</text>
+<rect x="560" y="202" width="270" height="44" fill="#e6e6e6" stroke="#000" stroke-width="1"/>
+<text x="550" y="213" font-family="monospace" font-size="11" text-anchor="end">$C000</text>
+<text x="550" y="243" font-family="monospace" font-size="11" text-anchor="end">$CF9F</text>
+<text x="566" y="217" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">コンソールバッファ</text>
+<text x="566" y="232" font-family="sans-serif" font-size="12" text-anchor="start">文字 $C000〜$C7CF／属性 $C7D0〜$CF9F</text>
+<rect x="560" y="246" width="270" height="36" fill="#e6e6e6" stroke="#000" stroke-width="1"/>
+<text x="550" y="257" font-family="monospace" font-size="11" text-anchor="end">$CFA0</text>
+<text x="550" y="279" font-family="monospace" font-size="11" text-anchor="end">$D37F</text>
+<text x="566" y="261" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">ワークエリア</text>
+<text x="566" y="276" font-family="sans-serif" font-size="12" text-anchor="start">キーリングバッファ 等</text>
+<rect x="560" y="282" width="270" height="40" fill="#f2f2f2" stroke="#000" stroke-width="1"/>
+<text x="550" y="293" font-family="monospace" font-size="11" text-anchor="end">$D380</text>
+<text x="550" y="319" font-family="monospace" font-size="11" text-anchor="end">$D3FF</text>
+<text x="566" y="297" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">共有 RAM 128 B</text>
+<text x="566" y="312" font-family="sans-serif" font-size="12" text-anchor="start">= メイン CPU の $FC80〜$FCFF</text>
+<rect x="560" y="322" width="270" height="44" fill="#cfcfcf" stroke="#000" stroke-width="1"/>
+<text x="550" y="333" font-family="monospace" font-size="11" text-anchor="end">$D400</text>
+<text x="550" y="363" font-family="monospace" font-size="11" text-anchor="end">$D7FF</text>
+<text x="566" y="337" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">サブ CPU の I/O</text>
+<text x="566" y="352" font-family="sans-serif" font-size="12" text-anchor="start">キー・VRAM ゲート・オフセットレジスタ 等</text>
+<rect x="560" y="366" width="270" height="40" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="550" y="377" font-family="monospace" font-size="11" text-anchor="end">$D800</text>
+<text x="550" y="403" font-family="monospace" font-size="11" text-anchor="end">$DFFF</text>
+<text x="566" y="381" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">subsys_c.rom 先頭 2 KB</text>
+<text x="566" y="396" font-family="sans-serif" font-size="12" text-anchor="start">8x8 ANK フォント</text>
+<rect x="560" y="406" width="270" height="130" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="550" y="417" font-family="monospace" font-size="11" text-anchor="end">$E000</text>
+<text x="550" y="533" font-family="monospace" font-size="11" text-anchor="end">$FFFF</text>
+<text x="566" y="421" font-family="sans-serif" font-size="12" text-anchor="start" font-weight="bold">subsys_c.rom 8 KB</text>
+<text x="566" y="436" font-family="sans-serif" font-size="12" text-anchor="start">実行コード（リセットエントリポイントは $E000）</text>
+<rect x="660" y="500" width="164" height="16" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="664" y="511" font-family="monospace" font-size="10" text-anchor="start">$FFE0</text>
+<text x="710" y="511" font-family="sans-serif" font-size="10" text-anchor="start">予備（$00）16 B</text>
+<rect x="660" y="516" width="164" height="16" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="664" y="527" font-family="monospace" font-size="10" text-anchor="start">$FFF0</text>
+<text x="710" y="527" font-family="sans-serif" font-size="10" text-anchor="start">6809 ベクタ表 16 B</text>
+<rect x="110" y="570" width="18" height="12" fill="#ffffff" stroke="#000" stroke-width="1"/>
+<text x="134" y="581" font-family="sans-serif" font-size="12" text-anchor="start">ROM</text>
+<rect x="230" y="570" width="18" height="12" fill="#e6e6e6" stroke="#000" stroke-width="1"/>
+<text x="254" y="581" font-family="sans-serif" font-size="12" text-anchor="start">RAM</text>
+<rect x="350" y="570" width="18" height="12" fill="#f2f2f2" stroke="#000" stroke-width="1"/>
+<text x="374" y="581" font-family="sans-serif" font-size="12" text-anchor="start">共有 RAM</text>
+<rect x="470" y="570" width="18" height="12" fill="#cfcfcf" stroke="#000" stroke-width="1"/>
+<text x="494" y="581" font-family="sans-serif" font-size="12" text-anchor="start">I/O</text>
+<text x="110" y="604" font-family="sans-serif" font-size="11" text-anchor="start">各領域の高さは寸法に比例していません。subsys_c.rom は $D800〜$FFFF の 10240 B を 1 本で占めます。</text>
+</svg>

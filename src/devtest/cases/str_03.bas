@@ -1,0 +1,9 @@
+0 REM AltROMs test - MIT, own work.
+10 A$="ABCDEFG":B$=""
+20 FOR I=LEN(A$) TO 1 STEP -1
+30 B$=B$+MID$(A$,I,1)
+40 NEXT
+50 PRINT B$
+60 C$=""
+70 FOR I=1 TO 50:C$=C$+"*":NEXT
+80 PRINT LEN(C$)

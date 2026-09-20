@@ -1,0 +1,55 @@
+# ビルド派生物 (= make で再生成されるため git track しない)
+build/
+tmp/
+
+# 作業用ディレクトリ (= git track しない)
+.claude/
+
+# ROM バイナリは原則 git track しない
+*.rom
+*.bin
+
+# 例外: 配布用に同梱する ROM イメージのみ track する。
+#   - MIT・ソース公開の代替 ROM 一式 (7tbasic3 を含む) は、本プロジェクトが
+#     ソースからビルドした成果物。
+#   - データ ROM 3 本 (kanji / kanji2 / dicrom) も、同梱スクリプトと同梱の
+#     入力データから make が決定的に生成する成果物 (docs/LEGAL.md §9)。
+# 機種付属の ROM は一切同梱しない。
+!roms/
+roms/*
+!roms/boot_bas.rom
+!roms/boot_dos.rom
+!roms/subsys_c.rom
+!roms/initiate.rom
+!roms/initbase.rom
+!roms/initav1.rom
+!roms/initex.rom
+!roms/subsys_a.rom
+!roms/subsys_b.rom
+!roms/subsyscg.rom
+!roms/extsub.rom
+!roms/7tbasic3.rom
+!roms/kanji.rom
+!roms/kanji2.rom
+!roms/dicrom.rom
+
+# Python キャッシュ
+__pycache__/
+*.pyc
+
+# Prerequisites／オブジェクト／リンカ出力
+*.d
+*.o
+*.obj
+*.elf
+*.map
+*.lst
+
+# OS／エディタ生成ファイル
+.DS_Store
+Thumbs.db
+*.swp
+*~
+._*
+.vscode/
+.idea/

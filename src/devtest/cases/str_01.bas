@@ -1,0 +1,7 @@
+0 REM AltROMs test - MIT, own work.
+10 A$="VIVA 68B09E!"
+20 PRINT LEN(A$)
+30 PRINT LEFT$(A$,7)
+40 PRINT RIGHT$(A$,4)
+50 PRINT MID$(A$,9,2)
+60 PRINT A$+" V2"

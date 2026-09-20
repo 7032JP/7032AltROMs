@@ -1,0 +1,23 @@
+0 REM AltROMs test - MIT, own work.
+1 REM 図形の座標が画面の外にあるとき: 横は 640 以上も負も 639 に丸める。
+2 REM 縦は 200-255 を 199 に丸め、それ以外の範囲外 (256 以上・負) は誤り 5 で
+3 REM 何も描かない。小数の座標は横が切り捨て・縦が最近接へ丸め。
+4 REM POINT (点灯 -1 / 消灯 0) で読み取ってから CLS して結果を表示する。
+10 CLS:EE$=""
+20 PSET (100.6,10.6,7)
+30 A1=POINT(100,11):A2=POINT(101,11):A3=POINT(100,10)
+40 LINE (630,190)-(700,190),PSET,7
+50 B1=POINT(639,190)
+60 PSET (200,210,7)
+70 C1=POINT(200,199)
+80 ON ERROR GOTO 900
+90 PSET (10,256,7)
+95 PSET (10,-1,7)
+96 PSET (-5,20,7)
+97 D1=POINT(639,20)
+98 CLS
+100 PRINT A1;A2;A3
+110 PRINT B1;C1;D1
+120 PRINT "[";EE$;"]"
+130 END
+900 EE$=EE$+STR$(ERR):RESUME NEXT
