@@ -1,8 +1,8 @@
 # 7032 Alternative ROMs
 
-7032 Alternative ROMs は、FM-7 / FM77AV 系パソコンのエミュレーターで使う代替 ROM 一式です。機種ごとに選んで置く ROM 15 本を収録しており、機種に元から載っていた ROM が無くても BASIC が立ち上がります。参考書籍と動作観察を基に書き起こした独立実装です（[docs/LEGAL.md](docs/LEGAL.md) §6）。アセンブラソースを持つ ROM はすべて MIT ライセンス・ソース公開です。
+7032 Alternative ROMs は、FM-7 / FM77AV 系パソコンのエミュレーターで使う代替 ROM 一式です。機種ごとに選んで置く ROM 15 本を収録しており、この ROM 一式だけで BASIC が立ち上がります。参考書籍と動作観察を基に書き起こした独立実装です（[docs/LEGAL.md](docs/LEGAL.md) §6）。アセンブラソースを持つ ROM はすべて MIT ライセンス・ソース公開です。
 
-配布物のバージョンは **v1.0.0** です（[CHANGELOG.md](CHANGELOG.md)）。
+配布物のバージョンは **v1.0.1** です（[CHANGELOG.md](CHANGELOG.md)）。
 
 ## 収録物
 
@@ -20,7 +20,7 @@
 | ブラウザで、まず BASIC を触ってみたい（インストール不要） | [docs/SETUP.md §3](docs/SETUP.md#3-ブラウザで試すインストール不要) |
 | 手元のエミュレーターに置いて使いたい | [docs/SETUP.md §4](docs/SETUP.md#4-機種別コピー表) の機種別コピー表 |
 | BASIC の書き方・使える予約語を調べたい | [docs/BASIC_REFERENCE.md](docs/BASIC_REFERENCE.md) |
-| 何がどこまで動くのか、機種に元から載っていた ROM と何が違うのかを知りたい | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) |
+| 何がどこまで動くのかを知りたい | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) |
 | 自分でビルドしたい・ROM の設計や試験の仕組みを知りたい | [docs/BUILD.md](docs/BUILD.md) |
 | 利用条件・免責・来歴を読みたい | [docs/LEGAL.md](docs/LEGAL.md) |
 | 同梱するフォントの由来とライセンスを読みたい | [LICENSE-FONT.md](LICENSE-FONT.md) |
@@ -56,15 +56,15 @@ Issue と Pull Request を歓迎します。寄稿していただくコードと
 
 | # | 条件 | 何を示すものか |
 | --- | --- | --- |
-| 1 | **DCO 1.1 への同意**（`Signed-off-by`） | 一般の OSS と同じ、提出物の出所についての標準の証明 |
+| 1 | **DCO 1.1 への同意**（`Signed-off-by`） | 提出物の出所の証明 |
 | 2 | **独立実装の確認** | 独立実装の方針（[docs/LEGAL.md](docs/LEGAL.md) §6）に沿っていることの確認 |
 
 [Developer Certificate of Origin](https://developercertificate.org/) 1.1 を寄稿の受入条件とします。提出するコミットに `git commit -s` で `Signed-off-by` 行を付けてください。条項は原文のとおりに適用し、`Signed-off-by` の無いコミットは受け入れません。付け忘れたときは、追加のコミットで補うのではなく `git commit --amend -s` または `git rebase --signoff` で当該コミットに付け直してください。
 
-独立実装の確認として、Pull Request の説明に次を書いてください。第三者の既存のコード・データを改変・移植した寄稿を受け付けないのは、DCO とは別に本プロジェクトが置いている受入条件です。
+独立実装の確認として、Pull Request の説明に次を書いてください。
 
-- 用いた情報源の種別（参考書籍の書名、または動作観察）。動作観察は、寄稿者が自分で作成した試験プログラムによるものに限ります。
-- 第三者が権利を持つコード・データ、機種に元から載っていた ROM の内容、第三者のフォントを持ち込んでいないこと。
+- 用いた情報源の種別（参考書籍、または動作観察）。動作観察は、寄稿者が自分で作成した試験プログラムによるものに限ります。
+- 寄稿するコード・データ・字形の出所の種別（寄稿者自身の作成、または本リポジトリにある既存の素材）。
 - 起動バナー・案内文言などの表現性の高い要素に、第三者の表現を用いていないこと。
 - 雇用契約・委託契約等により第三者の権利が及ぶ可能性がある場合は、必要な同意を得ていること。
 

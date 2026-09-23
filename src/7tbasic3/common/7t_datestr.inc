@@ -3,10 +3,10 @@
 ;==============================================================================
 ; 7t_datestr.inc — DATE$ 代入の本体 (date_set_str)
 ;
-;   書式 (参考書籍「DATE$」): DATE$="YY/MM/DD"
+;   書式: DATE$="YY/MM/DD"
 ;     年は 2 けた (00-99)。全体でちょうど 8 文字でなければ受け付けない。
 ;     数字 6 個の間に挟まる 2 文字は区切りとして読み飛ばすだけで種類は問わず、
-;     保持する値では '/' に揃える (動作観察: "26-08-13" も受理し "26/08/13" を返す)。
+;     保持する値では '/' に揃える (動作観察)。
 ;     月は 1-12、日は 1 からその月の日数まで。2 月は年が 4 の倍数なら 29 日。
 ;     長さ違い・数字でない・範囲外はいずれも Illegal Function Call とする。
 ;
@@ -41,21 +41,19 @@ date_set_str:
                 TSTB
                 BEQ     dss_err         ; 0 日は無い
                 LDA     ,S              ; A = 月 (1-12)
-                LDX     #dss_mdays-1    ; 月は 1 起点なので 1 手前を基点にする
-                LDA     A,X             ; A = その月の日数 (2 月は 28)
-                CMPA    #28
+                LDX     #dss_mlimit-1   ; 月は 1 起点なので 1 手前を基点にする
+                LDA     A,X             ; A = その月で受け付けない最小の日
+                                        ;   (= 日数 + 1。2 月は 29)
+                CMPA    #29
                 BNE     dss_dcmp        ; 2 月以外はそのまま
                 LDA     1,S             ; A = 年 (00-99)
                 ANDA    #$03            ; 4 の倍数なら閏年
-                BNE     dss_feb28
-                LDA     #29
-                BRA     dss_dcmp
-dss_feb28:
-                LDA     #28
+                BNE     dss_dcmp        ; 平年の 2 月は表の 29 をそのまま使う
+                LDA     #30             ; 閏年の 2 月は 29 日まで
 dss_dcmp:
                 PSHS    A
-                CMPB    ,S+             ; 日 > その月の日数 → 撥ねる
-                BHI     dss_err
+                CMPB    ,S+             ; 日 >= 受け付けない最小の日 → 撥ねる
+                BHS     dss_err
                 ; --- 検証完了 → 8 文字を複写し、区切りを '/' に揃える ---
                 LEAS    2,S             ; 月・年の作業値を捨てる
                 LDX     STRPTR
@@ -74,6 +72,6 @@ dss_cp:
                 JMP     sixdig_save
 dss_err:
                 ; 保持中の日付は書き換えずにエラーハンドラへ直行する
-                ; (呼出し深さのスタック整理は行わない。time_set_str と同じ既存規約)
+                ; (呼出し深さのスタック整理は行わない。time_set_str と同じ)
                 JMP     errc_5          ; Illegal Function Call
-; 月ごとの日数表は 7t_save_list.inc に置く。
+; 月ごとの上限表 (dss_mlimit) は 7t_save_list.inc に置く。

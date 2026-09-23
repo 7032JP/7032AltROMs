@@ -4,22 +4,17 @@
 ; SPDX-License-Identifier: MIT
 ; Copyright (c) 2026 Naomitsu.Tsugiiwa
 ;==============================================================================
-; 7T-BASIC 3.1 — F-BASIC V3.0 互換 BASIC インタプリタ
+; 7T-BASIC 3.1 — BASIC インタプリタ (参考書籍の F-BASIC V3.0 の文法を対象とする)
 ;
 ; ROM サイズ : 31744 byte ($7C00 bytes)  $8000–$FBFF
 ;   (アセンブル後のイメージは 32768 byte ($8000–$FFFF) で、配布する ROM はその先頭 31744 byte を切り出したもの)
 ;
 ; 設計方針: アドレスを固定するのは、参考書籍が位置を規定している所だけに限る。
-;   すなわち ROM 領域と RAM 領域の境界 (参考書籍、
-;   参考書籍)、I/O 領域の各ポート (参考書籍)、
-;   サブ CPU との共有領域の窓と相対構造 (参考書籍)、
-;   6809 のシステムベクトル (参考書籍)、BIOS の間接ベクタ語 $FBFA (参考書籍)、
-;   参考書籍が定める機械語入口とワークエリア。
 ;   それ以外の入口・表・ワークは通常のラベル / EQU として自然に配置し、
 ;   参照は全て記号経由で行う (アドレスに意味を持たせない)。
-;   目印語と起動ベクタ語 (BASVEC_*) の位置だけは、本プロジェクトの起動 ROM と
-;   本 ROM の間の内部の取り決めとして保つ。
-;   当方が選んだアドレスである (語に入る値は自然に決まったアドレス)。
+;   目印のワード (2 バイト) と起動ベクタのワード (BASVEC_*) の位置だけは、
+;   本プロジェクトの起動 ROM と本 ROM の間の取り決めとして保つ。
+;   当方が選んだアドレスである (ワードに入る値は自然に決まったアドレス)。
 ;   予約語の綴りと言語仕様は参考書籍に基づく。表の内部構造・欄の
 ;   並び・実装コードの配置・各表の置き場所は本実装が独自に決めた。
 ;   ワーク RAM のうち参考書籍がアドレスを定めるものはそのアドレスに置く。
@@ -28,8 +23,8 @@
 ;   割り付ける (アドレスは内部都合)。
 ;==============================================================================
 
-;--- 当方の起動 ROM との内部の取り決め (アドレスは当方が選んだもの) ------------
-BASVEC_SIG      EQU     $FBF4           ; 目印語 "7T" (直後に起動ベクタ 2 つ = 2 バイトの値 2 つ)
+;--- 当方の起動 ROM との取り決め (アドレスは当方が選んだもの) -----------------
+BASVEC_SIG      EQU     $FBF4           ; 目印のワード "7T" (直後に起動ベクタ 2 つ = 2 バイトの値 2 つ)
 
                 include "7t_tokens.inc"  ; 予約語トークン値のシンボル定義 (EQU のみ)
 
@@ -39,27 +34,27 @@ BASVEC_SIG      EQU     $FBF4           ; 目印語 "7T" (直後に起動ベク�
                 IFDEF   STAGE_ALT_RAM
 TXTTAB          EQU     STAGE_PTR+1
                 ELSE
-TXTTAB          EQU     $0033   ; プログラム本文先頭 (参考書籍「BASIC テキスト先頭」)
+TXTTAB          EQU     $0033   ; プログラム本文先頭
                 ENDC
                 IFDEF   STAGE_ALT_RAM
 VARTAB          EQU     STAGE_PTR+3
                 ELSE
-VARTAB          EQU     $0035   ; スカラ変数域先頭 = 本文終端の直後 (参考書籍「BASIC テキスト終端」)
+VARTAB          EQU     $0035   ; スカラ変数域先頭 = 本文終端の直後
                 ENDC
                 IFDEF   STAGE_ALT_RAM
 ARYTAB          EQU     STAGE_PTR+9
                 ELSE
-ARYTAB          EQU     $003B   ; 配列域先頭 (参考書籍「配列変数先頭」)
+ARYTAB          EQU     $003B   ; 配列域先頭
                 ENDC
                 IFDEF   STAGE_ALT_RAM
 STREND          EQU     STAGE_PTR+11
                 ELSE
-STREND          EQU     $003D   ; 変数域末尾 (参考書籍「未使用領域先頭」)
+STREND          EQU     $003D   ; 変数域末尾 (この先は未使用)
                 ENDC
-; 配列レイアウトは F-BASIC 3.0 のワーク規約（参考書籍の記載に基づく）に合わせた「プログラム直後・上方確保」:
+; 配列レイアウトは参考書籍のワークの並びに従う「プログラム直後・上方確保」:
 ;   TXTTAB → プログラム → VARTAB → スカラ変数 → ARYTAB → 配列 → STREND → 空き ← S
-;   (上方確保にするのは、VARPTR(A%(0)) が返す実体アドレスを相互運用要件どおりに
-;    するため。下方確保では VARPTR に依存する配置敏感なローダが動かない)
+;   (上方確保にするのは、VARPTR(A%(0)) が返す実体アドレスを参考書籍に載る
+;    ワークの並びどおりにするため)
                 IFDEF   STAGE_ALT_RAM
 ARR_NEWEND      EQU     STAGE_PTR+17
                 ELSE
@@ -68,29 +63,28 @@ ARR_NEWEND      EQU     $0043   ; 配列確保/変数挿入の新末尾一時 (2
                 IFDEF   STAGE_ALT_RAM
 CURLIN          EQU     STAGE_PTR+21
                 ELSE
-CURLIN          EQU     $0047   ; 現在行番号 (参考書籍「実行中の行番号」)
+CURLIN          EQU     $0047   ; 現在行番号 (実行中の行)
                 ENDC
                 IFDEF   STAGE_ALT_RAM
 DATPTR          EQU     STAGE_PTR+33
                 ELSE
-DATPTR          EQU     $0053   ; データ読取位置 (参考書籍「DATA アドレス」)
+DATPTR          EQU     $0053   ; データ読取位置 (READ が次に読む DATA)
                 ENDC
                 IFDEF   STAGE_ALT_RAM
 ERRLIN          EQU     STAGE_IO+34
                 ELSE
-ERRLIN          EQU     $00AD   ; 誤りの起きた行番号 (参考書籍「ERL」)
+ERRLIN          EQU     $00AD   ; 誤りの起きた行番号 (ERL が返す値)
                 ENDC
                 IFDEF   STAGE_ALT_RAM
 ERRNUM          EQU     STAGE_IO+33
                 ELSE
-ERRNUM          EQU     $00AC   ; 誤り番号 (参考書籍「ERR」)
+ERRNUM          EQU     $00AC   ; 誤り番号 (ERR が返す値)
                 ENDC
                 IFDEF   STAGE_ALT_RAM
 CONTPTR         EQU     STAGE_PTR+27
                 ELSE
 CONTPTR         EQU     $004D   ; CONT 再開位置 (停止した文の次の位置)。0 = 再開不可 2B
                 ENDC
-                                ;   (参考書籍「CONT 再開ステートメント」の位置)
                 IFDEF   STAGE_ALT_RAM
 CURLINE_PTR     EQU     STAGE_PTR+25
                 ELSE
@@ -99,14 +93,14 @@ CURLINE_PTR     EQU     $004B
                 IFDEF   STAGE_ALT_RAM
 CURIP           EQU     STAGE_PTR+29
                 ELSE
-CURIP           EQU     $004F   ; 実行 IP (2B。参考書籍「実行中ステートメント」の位置)
+CURIP           EQU     $004F   ; 実行 IP (2B。実行中の文の位置)
                 ENDC
                 IFDEF   STAGE_ALT_RAM
 in_cont_flag    EQU     STAGE_RUNTIME+100
                 ELSE
 in_cont_flag    EQU     $01E4   ; NEXT: 1=ループ継続, 0=終了 (impl_next が参照)
                 ENDC
-; --- AUTO (参考書籍「AUTO フラグ / AUTO 次行番号 / AUTO 増分」) ---
+; --- AUTO (実行中の印 / 次の行番号 / 増分) ---
                 IFDEF   STAGE_ALT_RAM
 auto_flag       EQU     STAGE_IO+18
                 ELSE
@@ -122,7 +116,7 @@ auto_inc        EQU     STAGE_IO+21
                 ELSE
 auto_inc        EQU     $00A0   ; AUTO の行番号の増分値 (2B)
                 ENDC
-; --- UNLIST (参考書籍「UNLIST 行番号」) ---
+; --- UNLIST (表示を止める行番号) ---
 ;   LIST はこの値以上の行番号を持つ行を表示しない。$FFFF = 制限なし。
                 IFDEF   STAGE_ALT_RAM
 unlist_ln       EQU     STAGE_RUNTIME+103
@@ -140,10 +134,10 @@ VARTYP          EQU     STAGE_PTR+37
 VARTYP          EQU     $0057
                 ENDC
 ;  行入力バッファ。参考書籍は論理行を 255 文字と定めるので、
-;  256B 全域を使う (255 文字 + $00 終端)。置き場所は参考書籍の
-;  「1 行入力バッファ」($043D-$053C) に合わせる。直接モードの行はこの上で実行する
+;  256B 全域を使う (255 文字 + $00 終端)。置き場所は参考書籍の位置
+;  ($043D-$053C) に置く。直接モードの行はこの上で実行する
 ;  ため、他のワークを一切重ねない (行の実行中に踏まれて本文が壊れる)。
-;    生存期間が行入力を跨いでいた CONTLPTR は廃止し、CONT 時に導出する。
+;    CONT の再開位置は CONT 時に導出する。
                 IFDEF   STAGE_ALT_RAM
 INPBUF          EQU     STAGE_INPUT+0
                 ELSE
@@ -154,9 +148,9 @@ INPBUF          EQU     $043D
 ;  実行用行バッファ (EXECBUF) で実行するので、実行中の本文はここには無い。
 ;  そのため、文の実行中だけ生きる作業域 (str_work_buf の束) と時間排他で
 ;  共用する (受け付けた行は写し終えるまで壊さない)。
-; EXEC アドレス (2B)。参考書籍「EXEC アドレス」。
-;   参考書籍の EXEC は「開始アドレスの指定がないときは、直前に実行した LOADM の
-;   入口アドレス、または直前の EXEC の開始アドレスから実行する」と定める。LOADM の完了と
+; EXEC アドレス (2B)。
+;   開始アドレスを省いた EXEC は、直前の LOADM の入口アドレスか直前の EXEC の
+;   開始アドレスから実行する (参考書籍)。LOADM の完了と
 ;   開始アドレス付きの EXEC がここへ記し、開始アドレス無しの EXEC がここを読んで飛ぶ。
 ;   未設定のときは Illegal Function Call の入口 (ramstub_ifc) を指す (コールド
 ;   スタートで入れる)。USR0〜USR9 のアドレス (usr_slot_tbl) が直後に続く。
@@ -176,8 +170,8 @@ str_sign        EQU     STAGE_RUNTIME+79
 str_sign        EQU     $01CF   ; int_to_str 符号フラグ 1B
                 ENDC
 ; 文の実行中だけ生きる作業域の束 (256B)。1 行入力バッファ (INPBUF) と時間排他で
-;   共用する (上の INPBUF の注記)。参考書籍の「中間言語バッファ」
-;   ($033A) は実行用行バッファ (EXECBUF) に充てる。
+;   共用する (上の INPBUF の注記)。参考書籍の位置の $033A は
+;   実行用行バッファ (EXECBUF) に充てる。
 str_work_buf    EQU     INPBUF  ; 文字列連結作業バッファ (256B)
                 IFDEF   STAGE_ALT_RAM
 escat_save_x    EQU     STAGE_RUNTIME+17
@@ -223,8 +217,8 @@ DA_SECBUF       EQU     $05EC   ; ASCII ディスク LOAD: セクタ読取バッ
                 ENDC
                                 ;   テープの機械語ブロック緩衝 (MLBUF) / SAVE のブロック
                                 ;   組立バッファ (IIL_BUF) / 演奏の音符キュー (PLAYQ) と
-                                ;   アドレス共有 (参考書籍「CAS0 入出力
-                                ;   バッファ」)。テープ・ディスクの入出力と PLAY 演奏は
+                                ;   アドレス共有 (テープの
+                                ;   入出力バッファ)。テープ・ディスクの入出力と PLAY 演奏は
                                 ;   互いに入口で相手を止めるため時間排他で共用できる。
                 IFDEF   STAGE_ALT_RAM
 DA_SECBUF_END   EQU     STAGE_BUFFER+431
@@ -238,8 +232,7 @@ STRBOT          EQU     STAGE_PTR+13
                 ELSE
 STRBOT          EQU     $003F   ; 文字列領域の下限 (2B)。このアドレス自体は使わない。
                 ENDC
-                                ;   システムスタックの上端でもある (標準構成と同じ配置。
-                                ;   参考書籍「文字領域先頭」の位置)。
+                                ;   システムスタックの上端でもある (文字列領域の先頭)。
                 IFDEF   STAGE_ALT_RAM
 TMPPTR          EQU     STAGE_IO+77
                 ELSE
@@ -248,7 +241,7 @@ TMPPTR          EQU     $00D8   ; 一時文字列で最後に使ったアドレ�
                                 ;   文の切れ目ごとに STRBOT へ戻して一括開放する。
 ; RND の系列状態 (4B = 32bit)。上位 24bit が返す値の仮数、最下位 8bit が
 ;   正規化のガードになる。
-;   置き場所は参考書籍の「RND ワークエリア」($0318-$031E)。
+;   置き場所は参考書籍の位置 ($0318-$031E)。
                 IFDEF   STAGE_ALT_RAM
 rnd_state       EQU     STAGE_FILE+118
                 ELSE
@@ -265,7 +258,7 @@ str_gcflg       EQU     $01EA   ; ごみ (どの記述子も指さない実体) 
                                 ;   詰め直しで倒す。これが 0 の間は詰め直しても
                                 ;   1 byte も回収できないので走らせない。
 ; --- ON〜GOSUB 割込テーブル ($071E-$0777) ---
-;   参考書籍「ON〜GOSUB 割り込み用テーブル」。1 件 5 バイトで、
+;   1 件 5 バイトで、
 ;   PEN ($071E) / COM(n) ($0723) / KEY(n) ($073C) / TIMER ($076E) /
 ;   INTERVAL ($0773) の順に並ぶ。各件の意味は
 ;     +0 … 0 以外のとき ON 状態
@@ -351,8 +344,8 @@ INTV_TPS        EQU     492     ; 1 秒あたりのタイマ tick 数 (周期 2.
 ;   参考書籍の KEY(n) ON/OFF/STOP と ON KEY(n) GOSUB を受ける。
 ;   割り込みマスクの値は参考書籍の
 ;   Interrupt Control の書式そのもの (下位 10 ビットが PF1〜PF10、1 で許可)。
-;   飛び先行番号の表 (key_line) は参考書籍「ON〜GOSUB
-;   割り込み用テーブル」の KEY(n) 欄に置く (10 スロット × 2B の「番号で引く
+;   飛び先行番号の表 (key_line) は ON〜GOSUB
+;   割込テーブルの KEY(n) 欄に置く (10 スロット × 2B の「番号で引く
 ;   常駐アドレス表」)。一括初期化は key_reset (コールドスタートと RUN 毎)。
                 IFDEF   STAGE_ALT_RAM
 key_line        EQU     STAGE_BUFFER+511
@@ -370,8 +363,8 @@ key_attn        EQU     STAGE_RUNTIME+105
                 ELSE
 key_attn        EQU     $01E9   ; ATTENTION の受領控え (1B, 0=未受領)。firq_read が積む
                 ENDC
-; BREAK フラグ (1B)。参考書籍「BREAK フラグ: この値が 0 でない場合、
-;   BREAK キーが押されたことを示します」。$FD04 を読む唯一の窓口 firq_read が中断キーの
+; BREAK フラグ (1B)。0 でなければ BREAK キーが押されたことを示す。
+;   $FD04 を読む唯一の窓口 firq_read が中断キーの
 ;   押下を見たとき非 0 にし、中断の判定 (brk_gate / brk_active) はこの控えを見る。
 ;   中断を受け付けた brk_stop と、直接モードの行の実行開始 (cmd_direct) で 0 に戻す。
                 IFDEF   STAGE_ALT_RAM
@@ -381,8 +374,8 @@ BRK_FLAG        EQU     $0313
                 ENDC
 ; 配列作業領域 (RAM)
 ; 次元数を固定しないため、添字表と次元表は低位 RAM の固定枠ではなく
-;   CPU スタックに置き、その先頭アドレスだけをここに持つ。表をスタックへ
-;   移したことで、次元数の上限は ARR_MAXDIM まで広げられる。
+;   CPU スタックに置き、その先頭アドレスだけをここに持つ。次元数の上限は
+;   ARR_MAXDIM で決まる。
                 IFDEF   STAGE_ALT_RAM
 arr_sptr        EQU     STAGE_RUNTIME+21
                 ELSE
@@ -443,10 +436,8 @@ ipxy_dst        EQU     $01A4   ; 図形座標の格納先ポインタ (2B)
 ; 次元数の上限。ホーナー法の反復回数と、CPU スタックに積む表の大きさ (2 byte/次元) の
 ;   両方を縛る。表の畳み込みに使う LEAS/LEAU の符号付 8bit オフセット
 ;   (2*次元数+4 ≦ 127) に収まる値であること。
-;   44 は動作観察で確かめた境界。標準は 44 次元までなら DIM・代入・読出しが
-;   成立し、45 次元以上は Subscript Out Of Range になる (このとき標準は
-;   ON ERROR で捕まえられず、行番号も報告しない)。よって受理する範囲を 44 に
-;   揃え、45 次元以上は Subscript Out Of Range (9) として捕まえられる形で返す。
+;   受理する範囲を 44 次元までとし、それを超える次元数は
+;   Subscript Out Of Range (9) として捕まえられる形で返す。
 ARR_MAXDIM      EQU     44
 ; --- 文字列領域の詰め直し作業変数: 単精度除算/表示のスクラッチと時分割共用 ---
 ;   詰め直しが走るのは (1) 文の切れ目 (2) 文字列を変数へ格納する瞬間 (3) FRE("")
@@ -481,13 +472,11 @@ gc_ent          EQU     $0065   ; 配列走査: 次エントリ先頭 (2B)
 ; $01D1-$01E2 は割込フックスロット (SWI3/SWI2/SWI/NMI/IRQ/FIRQ 各 3B の
 ;   JMP 置場。time_init が既定 JMP を全 6 スロットへ設置し、RAM ベクタが
 ;   ここを指す)。作業変数を置くと JMP コードを破壊し、該当割込みで暴走する
-;   ほか、常駐機械語がスロットへ植えたハンドラとも相互破壊になる (動作観察: 実在
-;   の常駐 ML が $01E0-$01E2 の FIRQ スロットへ JMP を植える)。よって本域には
+;   ほか、利用者の機械語がスロットへ植えたハンドラとも相互破壊になる。よって本域には
 ;   作業変数を一切置かない。乗算・配列名の作業変数は下の ZP 安全域
 ;   ($0002-$001A) に置く。
 ; --- ZP 安全域 ($0002-$001A, 25B) ---
-;   ディスク起動とテープ読取の全行程を書込み監視で確かめ、外来コード
-;   (boot ROM / 常駐側 / 低位 RAM 常駐コード) からの書込ゼロを確認した空き。
+;   ディスク起動とテープ読取が書き込まない空き。
 ;   コールドスタートの clr_zp ($00-$7F) で初期化される。ここに置くのは
 ;   「文の実行中だけ生きる一時ワーク」に限る ($0000-$0001 は誤った
 ;   ヌルポインタ書込の着弾点になりやすいため空けておく)。
@@ -552,9 +541,8 @@ gp_kwfn         EQU     STAGE_RUNTIME+72
 gp_kwfn         EQU     $01C8   ; 機能キーワード指定フラグ (1B)。PUT@ の 2 番目の
                 ENDC
                                 ;   引数が機能語 (PSET/PRESET/AND/OR/XOR) だったとき
-                                ;   だけ非 0 になる。参考書籍の PUT@ は
-                                ;   形式1/2 が「機能を伴わないキャラクタ矩形の書込」、
-                                ;   形式3/4 が「機能を伴う図形の書込」で、2 番目の
+                                ;   だけ非 0 になる。PUT@ の形式1/2 は機能を伴わない
+                                ;   矩形の書込、形式3/4 は機能を伴う書込で、2 番目の
                                 ;   引数の種別 (機能語かパレットコードか) だけが
                                 ;   両者を分ける。引数の個数では分けられない
                                 ;   (形式1 も 2 番目にパレットコードを採れる)。
@@ -580,10 +568,9 @@ gp_attr         EQU     STAGE_IO+76
 gp_attr         EQU     $00D7   ; GET@A/PUT@A (形式2/4) フラグ (0=形式1/3, 非0=@A 3プレーン)
                 ENDC
 ; PUT@ の大型矩形分割転送 (チャンク) 用ワーク
-; 残行数/行数の 3 バイトは ZP 安全域から FAC2 の内側 ($0084-$0086)
-;   へ移した。チャンク走行 (引数解析が終わった後の転送ループ) は式評価も浮動
+; 残行数/行数の 3 バイトは FAC2 の内側 ($0084-$0086)
+;   に置く。チャンク走行 (引数解析が終わった後の転送ループ) は式評価も浮動
 ;   小数演算も一切行わないため FAC2 は死んでおり、時分割共用して安全である。
-;   空いた $0009-$000A / $000D は文字列レジスタ (STRPTR/STRLEN) が使う。
 ;   gp_cury は $000B-$000C に残す。引数解析中は gp_arr_base として生きており
 ;     (= 式評価を跨ぐ)、FAC2 の内側へは置けないため。
                 IFDEF   STAGE_ALT_RAM
@@ -631,8 +618,8 @@ gpa_cthis       EQU     str_work_buf+$AA   ; 現ストリップのバイト列�
 ;   配列上のパターンは行末でバイト境界へ切上げないビット連続詰めなので、幅が
 ;   8 の倍数でない矩形はチャンク先頭がバイト境界に載らない。位相を持ち回り、
 ;   複写時に左詰めしてから共有 RAM のデータ領域へ積む。@A は 3 プレーンを同じ位相で積む。
-;   配置は ZP 安全域に限る。$01A0-$01FF はテープ起動ソフトが自前の作業域と
-;     して使う可能性がある区画であり、形式1/3 の転送で新たに踏むと常駐側を壊す。
+;   配置は ZP 安全域に限る。$01A0-$01FF は利用者の機械語が自前の作業域と
+;     して使う可能性がある区画であり、形式1/3 の転送で新たに踏まない。
 ;     配列名/乗算スクラッチ ($0002-$0008) は引数解析が終わった時点で死んでおり、
 ;     チャンク走行中は誰も参照しないため転用する。
 gp_w            EQU     arr_mul_a   ; 矩形の幅 W (2B)
@@ -670,7 +657,7 @@ vnw_size        EQU     $0011   ; vars_make_room: 新スカラエントリサイ
 ;   落ちてディスク起動が対話ループから抜けられなくなる。よって現在は
 ;   RUNLIN ($0311) / pc_capt ($01EC) / pc_capptr ($01ED) / iexec_resume
 ;   ($043A) / mpage_cur ($05DD) をそうした緩衝域と重ならない位置に置く。
-;   $00F7-$00FF も空きに見えるが、boot ROM と常駐低位 RAM コードが多数
+;   $00F7-$00FF も空きに見えるが、起動 ROM と利用者の機械語が多数
 ;   書き込む常用作業域のため使用禁止。
                 IFDEF   STAGE_ALT_RAM
 mpage_cur       EQU     STAGE_BUFFER+160
@@ -704,7 +691,7 @@ strf_buf        EQU     str_work_buf+$C0   ; STR$ 単精度用 捕捉バッフ�
 ; --- 単精度 超越関数 (SIN/COS/TAN/SQR) 用 FAC 一時 (str_work_buf+$A0) ---
 ;   float コア (fmul/fadd/fdiv) を跨いで値を保持するための 6B 展開形 FAC 退避。
 ;   コア群のスクラッチ $43-$4F とは非重複。
-;   1 バイトの fsc_flag だけは参照が多いので直接ページへ移した (専有)。
+;   1 バイトの fsc_flag だけは参照が多いので直接ページに置く (専有)。
 fsc_x           EQU     str_work_buf+$A0   ; 引数/被開平数 保存 (6B)
 fsc_r           EQU     str_work_buf+$A6   ; r / ニュートン近似 y (6B)
 fsc_s           EQU     str_work_buf+$AC   ; s = r*r (6B)
@@ -722,7 +709,7 @@ fsc_u           EQU     str_work_buf+$B9   ; TAN 用 sin 値保存 (6B)
 ;   仮数レジスタは 8B (56bit 仮数 + 下位 8bit ガード, bit63=先頭 1)。
 ;   [dx_m|dw1_m] は 16B 連続 (乗算の 128bit 積シフトで前提) なので
 ;   str_work_buf の中に置いたままにする。指数と符号は参照が多く、連続で
-;   ある必要も無いので直接ページへ移した (いずれも専有。共用しない)。
+;   ある必要も無いので直接ページに置く (いずれも専有。共用しない)。
                 IFDEF   STAGE_ALT_RAM
 dw1_exp         EQU     STAGE_IO+67
                 ELSE
@@ -768,7 +755,7 @@ dp_tmp          EQU     STAGE_PTR+38
                 ELSE
 dp_tmp          EQU     $0058   ; 丸めビット/末尾ゼロ数 一時 1B (参照が多いので
                 ENDC
-                                ;   直接ページへ移した。専有)
+                                ;   直接ページに置く。専有)
 strf_dbuf       EQU     str_work_buf+$30  ; STR$(倍精度) 捕捉バッファ (25B)
 
                 IFDEF   STAGE_ALT_RAM
@@ -776,26 +763,23 @@ MLBUF           EQU     STAGE_BUFFER+176
                 ELSE
 MLBUF           EQU     $05ED   ; テープの機械語ブロック緩衝 (255B。参考書籍
                 ENDC
-                                ;   「CAS0 入出力バッファ」$05ED-$06EB。LOADM / 常駐ローダ入力)
+                                ;   の位置 $05ED-$06EB。LOADM / 機械語からの入力)
                 IFDEF   STAGE_ALT_RAM
 IIL_BUF         EQU     STAGE_BUFFER+176
                 ELSE
-IIL_BUF         EQU     $05ED   ; SAVE のブロック組立バッファ (128B。同じ CAS0 入出力バッファ)。
+IIL_BUF         EQU     $05ED   ; SAVE のブロック組立バッファ (128B。MLBUF と同じ位置)。
                 ENDC
-                                ;   行挿入 (impl_insert_line) は呼出元バッファ
-                                ;   (INPBUF / str_work_buf, 256B) 上で in-place トークン化
-                                ;   する方式へ変更したため、本バッファは使わなくなった。
                                 ;   ASCII セーブのテキストは行長に依らずここへ 128B ずつ
                                 ;   詰めてブロック書出しする (7t_save_list.inc)
 ; FAC1: 浮動小数点アキュムレータ (内部形式 倍精度 8B): $50=指数,$51-$57=仮数)
-;   参考書籍「FAC1」$0074-$007C の位置 (展開形 8B は当方のもの)。
+;   置き場所は $0074-$007C (展開形 8B は当方のもの)。
                 IFDEF   STAGE_ALT_RAM
 FAC1            EQU     STAGE_NUMBER+22
                 ELSE
 FAC1            EQU     $0074
                 ENDC
-; FAC2: 第2オペランド (内部形式 倍精度 8B)。参考書籍
-;   「FAC2」$0082-$008A の位置。
+; FAC2: 第2オペランド (内部形式 倍精度 8B)。参考書籍の位置
+;   $0082-$008A に置く。
                 IFDEF   STAGE_ALT_RAM
 FAC2            EQU     STAGE_NUMBER+36
                 ELSE
@@ -814,9 +798,9 @@ FAC2            EQU     $0082
 ;   ZP 安全域の同居者 (gp_* / escat_save_x / p_*) はいずれも文の実行中だけ
 ;   生きるワークで、式評価の最中には書かれない。
 ;   置き場は ZP 安全域のうち「式評価の最中に決して書かれない」3 バイト
-;   ($0009-$000A / $000D) とする。ここは PUT@/GET@ のチャンク走行ワーク
-;   (gp_rows_*) が居た跡地で、その 3 つは FAC2 の内側 ($0084-$0086) へ移した
-;   (チャンク走行は式評価も浮動小数演算も一切行わないため FAC2 は死んでいる)。
+;   ($0009-$000A / $000D) とする。PUT@/GET@ のチャンク走行ワーク (gp_rows_*)
+;   は FAC2 の内側 ($0084-$0086) に置く (チャンク走行は式評価も浮動小数演算も
+;   一切行わないため FAC2 は死んでいる)。
 ;   $000B-$000C (gp_cury) と $0015 (vnw_size) は使えない。前者は引数解析中
 ;     gp_arr_base として生き、後者は未定義変数の新規作成で書かれるため、
 ;     どちらも「式評価の最中に書かれる」バイトである。
@@ -853,15 +837,15 @@ TMPSTR          EQU     STAGE_RUNTIME+35
                 ELSE
 TMPSTR          EQU     $01A3   ; 一時1文字バッファ
                 ENDC
-; 型タグ (0=整数,1=単精度,2=倍精度,3=文字列)。参考書籍
-;   「FAC1 の型」の位置 (値の符号化は当方のもの)。
+; 型タグ (0=整数,1=単精度,2=倍精度,3=文字列)。参考書籍の位置に置く
+;   (値の符号化は当方のもの)。
                 IFDEF   STAGE_ALT_RAM
 FACTYPE         EQU     STAGE_EXPR+21
                 ELSE
 FACTYPE         EQU     $0017
                 ENDC
 ; 左オペランド (FAC2) の型タグ。四則/比較の型二重パスで pop_to_fac2 が設定し、
-; 各 impl_fp_* が「両オペランド整数なら整数パス(ビット一致)/片方でも単精度なら
+; 各 impl_fp_* が「両オペランド整数なら整数パス/片方でも単精度なら
 ; float 昇格」を判定するのに使う。FAC2 の直前の空き DP バイトを転用。
                 IFDEF   STAGE_ALT_RAM
 FAC2TYPE        EQU     STAGE_PTR+43
@@ -904,9 +888,9 @@ VNPTR           EQU     STAGE_NUMBER+14
                 ELSE
 VNPTR           EQU     $006C   ; 名前の本文上の先頭アドレス (2B)
                 ENDC
-VN_MAXLEN       EQU     16      ; 有効文字数 (標準構成の動作観察による値)
-; READ/DATA: 現在走査中の DATA 行レコード先頭 (2B)。参考書籍
-;   「DATA 文行番号」の位置 (行番号はレコードの +2)。
+VN_MAXLEN       EQU     16      ; 有効文字数 (動作観察)
+; READ/DATA: 現在走査中の DATA 行レコード先頭 (2B)。参考書籍の位置に置く
+;   (行番号はレコードの +2)。
                 IFDEF   STAGE_ALT_RAM
 DATLINE         EQU     STAGE_PTR+31
                 ELSE
@@ -923,13 +907,13 @@ div_num         EQU     STAGE_NUMBER+18
 div_num         EQU     $0070   ; div16s: |被除数|/商 作業 2B
                 ENDC
 ; 変数型デフォルト表 (A-Z 各1B: 0=sng,1=int,2=dbl,3=str)。
-;   参考書籍の「型宣言テーブル」の位置 (値の符号化は当方のもの)。
+;   参考書籍の位置に置く (値の符号化は当方のもの)。
                 IFDEF   STAGE_ALT_RAM
 DEFTYPE         EQU     STAGE_FILE+125
                 ELSE
 DEFTYPE         EQU     $031F   ; 26B
                 ENDC
-; 副手続き (GOSUB) / 繰り返し (FOR) / WHILE の枠と直接モードの行は、システム
+; サブルーチン (GOSUB) / 繰り返し (FOR) / WHILE の枠と直接モードの行は、システム
 ;   スタックの上に積む (下の「システムスタック上の枠」)。積み上げ量の変数は無い。
                 IFDEF   STAGE_ALT_RAM
 PRINT_COL       EQU     STAGE_PTR+0
@@ -941,21 +925,19 @@ ONERROR_LIN     EQU     STAGE_IO+41
                 ELSE
 ONERROR_LIN     EQU     $00B4   ; 誤り捕捉の飛び先行番号 (2B。参考書籍
                 ENDC
-                                ;   「エラートラップ行」の位置。値は行番号)
+                                ;   の位置。値は行番号)
                 IFDEF   STAGE_ALT_RAM
 ONERROR_EN      EQU     STAGE_IO+38
                 ELSE
 ONERROR_EN      EQU     $00B1   ; ON ERROR 状態 (0=無効/1=有効/2=ハンドラ実行中。
                 ENDC
-                                ;   参考書籍「エラー処理中フラグ」の位置。
                                 ;   値の符号化は当方のもの)
 ;------------------------------------------------------------------------------
-; システムスタック上の枠 (参考書籍の「未使用領域」の
+; システムスタック上の枠 (参考書籍の未使用領域の
 ;   中で、システムスタックの上端は文字領域の下限 STRBOT)。
-;   副手続き (GOSUB) / 繰り返し (FOR) / WHILE の情報と直接モードの行は、
+;   サブルーチン (GOSUB) / 繰り返し (FOR) / WHILE の情報と直接モードの行は、
 ;   システムスタックの上に枠として積む。段数の上限は無く、未使用領域が尽きれば
-;   Out Of Memory (参考書籍 WHILE〜WEND「メモリの許される範囲で
-;   何重にでもネストできます」)。
+;   Out Of Memory (ネストの深さはメモリの範囲まで。参考書籍)。
 ;   枠は EXEC_SP (文の切れ目のシステム S = 枠列の先頭) から STRBOT まで並ぶ。
 ;   各枠の先頭 1 バイトが種別。
 ;     TAG_GOSUB  5B  [種別][復帰 IP 2][復帰行レコード 2]
@@ -986,15 +968,15 @@ gcu_rp          EQU     $0316   ; GCURSOR: 応答の読出し位置 (2B)。$1F �
 ;   しか無くメイン CPU から読めないため、範囲指定のたびに現在値を添えられるよう
 ;   BASIC 側にも控えを持つ (控えが無いと固定値を送ることになり、40 桁で走行中に
 ;   範囲を指定すると桁数まで書き換わってしまう)。
-;   置き場所は参考書籍の「画面桁数」の位置 ($00C3) に合わせる。
+;   置き場所は参考書籍の位置 ($00C3) に置く。
                 IFDEF   STAGE_ALT_RAM
 con_cols        EQU     STAGE_IO+56
                 ELSE
 con_cols        EQU     $00C3   ; 現在の表示桁数 (1B, 40/80)
                 ENDC
 ; 現在のスクロール範囲 (2B, 隣接。上端行 / 行数)。起動時 0 行目から CON_ROWS 行
-;   (= 画面全体)。CONSOLE は省略した引数について「現在の設定を保つ」ので
-;   (参考書籍「CONSOLE 文」)、省略時の既定値をここから採る。
+;   (= 画面全体)。CONSOLE は省略した引数について現在の設定を保つので
+;   (参考書籍)、省略時の既定値をここから採る。
 ;   WIDTH は画面全体へ戻す。con_init_send が送出のたびに書き込む。
                 IFDEF   STAGE_ALT_RAM
 con_wtop        EQU     STAGE_FILE+108
@@ -1009,8 +991,7 @@ con_wend        EQU     $030F   ; スクロール範囲 終了行 (1B。同上�
 ; CONSOLE の第 3・第 4 引数の現在値 (2B、隣接。省略時の既定値と、コンソール
 ;   イニシャライズ ($01) の相対 8 として送る値と、文字色を緑に固定する印)。
 ;   コールドスタートで impl_sub_init が 0 に初期化する。
-;   con_pf の置き場所は参考書籍の「ファンクションキー表示フラグ」
-;   ($0310。0=非表示 / 0 以外=表示) に合わせる。
+;   con_pf の置き場所は参考書籍の位置 ($0310。0=非表示 / 0 以外=表示) に置く。
                 IFDEF   STAGE_ALT_RAM
 con_pf          EQU     STAGE_FILE+110
                 ELSE
@@ -1022,15 +1003,14 @@ con_mono        EQU     STAGE_BUFFER+112
 con_mono        EQU     $05AD   ; 単色表示の指定 (1B。0=COLOR の色 / 非 0=文字色を緑のみに。con_pf と隣接)
                 ENDC
 ; TAB 停止位置の表 (10B = 80 桁ぶんのビット列。各バイトの bit7 が左の桁)。コールド
-;   スタートで 8 桁ごとにして TAB SET ($0B) で送る (参考書籍
-;   「画面表示関係初期化」「TAB セット」)。置き場所は参考書籍「TAB 停止位置」に合わせる。
+;   スタートで 8 桁ごとにして TAB SET ($0B) で送る (参考書籍)。
                 IFDEF   STAGE_ALT_RAM
 tab_map         EQU     STAGE_FILE+0
                 ELSE
 tab_map         EQU     $02A2   ; TAB 停止位置 (10B。参考書籍)
                 ENDC
 ; --- 拡張のためのフック ($022D-$02A1) ---
-;   参考書籍「拡張のためのフック」。いずれも通常は RTS で、
+;   いずれも通常は RTS で、
 ;   コールドスタートが $39 (RTS) を敷く。本 ROM が呼ぶのは
 ;   ステートメント実行フックだけである (MON / TERM / EXTIRQ は未実装)。
                 IFNDEF  STAGE_ALT_RAM
@@ -1044,8 +1024,8 @@ HOOK_TERM       EQU     $0284   ; TERM コマンドフック
                 ENDC
 ; --- デバイス登録テーブル・ルーチンベクトル (参考書籍) ---
 ;   DEVTBL は物理機番 0〜15 の 16 件で、各件はそのデバイスのルーチンベクトルの
-;   あるアドレス (0 = その物理機番は使用しない)。物理機番は参考書籍
-;   「物理機番対応表」の KYBD:=$00 / SCRN:=$01 / CAS0:=$02 / LPT0:=$03 /
+;   あるアドレス (0 = その物理機番は使用しない)。物理機番は参考書籍のとおり
+;   KYBD:=$00 / SCRN:=$01 / CAS0:=$02 / LPT0:=$03 /
 ;   COM0:=$04 / フロッピーディスク 0〜3 = $80〜$83 (DEVTBL の 16 件には載らない)。
 ;   ルーチンベクトルはデバイス名に続いて OPEN / CLOSE / 1 バイト入力 /
 ;   1 バイト出力 / POS / EOF / LOF の 7 アドレスを持つ。LPT0 のものだけは
@@ -1109,7 +1089,7 @@ FIL_ASCII       EQU     STAGE_FILE+58
                 ELSE
 FIL_ASCII       EQU     $02DC   ; アスキーフラグ $00=バイナリ $FF=アスキー
                 ENDC
-; 保護状態 (参考書籍 SAVE の P オプション)。0=非保護 / 1=保護。SAVE ,P で立ち、
+; 保護状態 (SAVE ,P。参考書籍)。0=非保護 / 1=保護。SAVE ,P で立ち、
 ;   ヘッダ (テープ) とディレクトリ (ディスク) のアスキーフラグを $FF から $FE へ
 ;   下げて書き出す。LOAD はその値から復元し、保護中の LIST / EDIT は
 ;   Protected Program (62) となる。NEW とコールドスタートで落とす。
@@ -1131,18 +1111,17 @@ FIL_NAME        EQU     $02DE   ; ファイル名 8B (8 文字に満たない分
                 IFDEF   STAGE_ALT_RAM
 FIL_PHYS        EQU     STAGE_FILE+68
                 ELSE
-FIL_PHYS        EQU     $02E6   ; 入出力デバイス物理機番 (参考書籍 物理機番対応表)
+FIL_PHYS        EQU     $02E6   ; 入出力デバイス物理機番 (参考書籍)
                 ENDC
                 IFDEF   STAGE_ALT_RAM
 TMR_REF         EQU     STAGE_FILE+82
                 ELSE
-TMR_REF         EQU     $02F4   ; タイマ参照時刻 6B (時・分・秒を各 2 けたの ASCII で。
+TMR_REF         EQU     $02F4   ; タイマ参照時刻 6B (時・分・秒を各 2 けたの ASCII で)
                 ENDC
-                                ;   参考書籍「$02F4-$02F9」)
                 IFDEF   STAGE_ALT_RAM
 SYS_DATE        EQU     STAGE_FILE+88
                 ELSE
-SYS_DATE        EQU     $02FA   ; 日付 6B (年・月・日を各 2 けたの ASCII で。同「$02FA-$02FF」)
+SYS_DATE        EQU     $02FA   ; 日付 6B (年・月・日を各 2 けたの ASCII で)
                 ENDC
                 IFDEF   STAGE_ALT_RAM
 cmt_motor_st    EQU     STAGE_BUFFER+128
@@ -1151,11 +1130,10 @@ cmt_motor_st    EQU     $05BD   ; カセットのモータ状態の控え (0=停
                 ENDC
                                 ;   $FD00 は書き込み専用なので、MOTOR の省略形
                                 ;   (反転) のために書いた値をここに残す
-; --- 実行用行バッファ (E2) の管理ワーク ---
+; --- 実行用行バッファの管理ワーク ---
 ;   格納は ASCII 原文 (行レコード = [次行ptr 2B][行番号 2B][本文 原文][00])。
 ;   実行時に到達した 1 行だけを実行用行バッファ (EXECBUF, 256B) へ変換して
-;   実行する。置き場所は参考書籍の「中間言語バッファ」
-;   ($033A-$043C。キー入力された BASIC テキストを変換したものを格納する場所)。
+;   実行する。置き場所は参考書籍の位置 ($033A-$043C)。
 ;   変換は決定的なので、同じ行を再変換すればバッファ内ポインタは同値で有効になる。
                 IFDEF   STAGE_ALT_RAM
 EXECBUF         EQU     STAGE_EXEC+0
@@ -1177,8 +1155,8 @@ CONTREC         EQU     $05E9   ; CONT 再開位置を含む行レコード先�
                 ENDC
                                 ;   CONTPTR (バッファ内ポインタ) と対で記録する
 ; --- DEF FN (使用者定義関数) 用ワーク ---
-;   格納の ASCII 化に伴い、定義スロットは「行レコード先頭 2B + 行内 (バッファ内)
-;   オフセット 1B」の 3B になった。呼出時は該当行をバッファへ変換してから
+;   本文は ASCII で格納するので、定義スロットは「行レコード先頭 2B + 行内
+;   (バッファ内) オフセット 1B」の 3B とする。呼出時は該当行をバッファへ変換してから
 ;   オフセット位置を参照する (変換は決定的なのでオフセットは常に有効)。
                 IFDEF   STAGE_ALT_RAM
 fn_call_argptr  EQU     STAGE_BUFFER+150
@@ -1239,13 +1217,13 @@ FN_SLOTSZ       EQU     3       ; 定義スロットの大きさ
 fn_probe_buf    EQU     str_work_buf+$E0   ; FN 名前プローブ (16B)
 ; 恒久ブロック (文字列変数・配列要素が所有する実体) の割付ポインタ。
 ;   ブロックは FRETOP+1 から上へ並ぶ。初期値 = MEMTOP (= 領域の最上位)。
-;   長さ L の確保は FRETOP -= L+2 (標準構成と同じ勘定。上位 2 byte は空ける)。
+;   長さ L の確保は FRETOP -= L+2 (上位 2 byte は空ける)。
                 IFDEF   STAGE_ALT_RAM
 FRETOP          EQU     STAGE_PTR+15
                 ELSE
 FRETOP          EQU     $0041   ; 恒久ブロックの割付ポインタ (2B。
                 ENDC
-                                ;   参考書籍の「使用済み文字領域先頭−1」の位置)
+                                ;   参考書籍の位置)
 ; --- 単精度浮動小数 除算/表示 用スクラッチ ($005E-$006A, 13B 連続空き) ---
 ;   fdiv (除算) と print_float は排他実行のため同一領域を再利用する。
                 IFDEF   STAGE_ALT_RAM
@@ -1615,30 +1593,27 @@ for_var_ptr     EQU     STAGE_NUMBER+20
                 ELSE
 for_var_ptr     EQU     $0072   ; FOR 制御変数の整数値アドレス 2B
                 ENDC
-;   $00DE-$00E0 は BIOS へのジャンプ (参考書籍「BIOS ジャンプ」。
-;     JSR $DE で BIOS を呼べる)。コールドスタートで JMP ml_io_dispatch を置く。
+;   $00DE-$00E0 は BIOS へのジャンプ
+;     (JSR $DE で BIOS を呼べる)。コールドスタートで JMP ml_io_dispatch を置く。
                 IFDEF   STAGE_ALT_RAM
 BIOS_JMP        EQU     STAGE_IO+83
                 ELSE
 BIOS_JMP        EQU     $00DE   ; BIOS へのジャンプ (RAM 上の JMP 3B)
                 ENDC
-;   $00E1-$00EF は作業変数を置かない予約区画 (RAM 台帳 !ZP_RESIDENT)。
-;     テープ起動のプログラムが常駐型機械語ローダを持つ場合、低位ページ全域へ自前の
-;     イメージを置くことがあり、この区画に実行コードが載り得る。ここに独自の作業変数を置くと、
-;     テープ読取のたびにそのコードを書き潰してローダが暴走する。
+;   $00E1-$00EF は作業変数を置かない予約区画。
+;     利用者の機械語は低位ページ全域へ自前のイメージを置くことがあり、この区画に
+;     実行コードが載り得る。ここに作業変数を置くと、テープ読取のたびにそのコードを
+;     書き潰す。
 ;     テープのビット読取の途中経過 (適応閾値・組立バイト・立ち上がり待ち
 ;     カウンタ・終端種別) はレジスタとシステムスタックだけで持つ
 ;     (7t_cmt_io.inc の cmt_measure_high / cmt_read_byte / cmt_read_block)。
-;     **ここへ新しい EQU を置くと make check-ram-map が落ちる。**
+;     **ここへ新しい EQU を置かない。**
                 IFDEF   STAGE_ALT_RAM
 MEMTOP          EQU     STAGE_PTR+19
                 ELSE
 MEMTOP          EQU     $0045   ; BASIC 使用上限 −1 = CLEAR 第 2 引数 m − 1
                 ENDC
-                                ;   (参考書籍「BASIC 使用上限−1」。既定 $7FFE。
-                                ;   参考書籍「BASIC 使用上限−1」の位置)。
-                                ;   既定 $8000。CLEAR n,m の m でユーザが下げ、
-                                ;   機械語ロード領域 ($8000 直下〜) を保護する。2B。
+                                ;   (既定 $7FFE)。CLEAR n,m の m で下げられる。2B。
                 IFDEF   STAGE_ALT_RAM
 mlm_first_addr  EQU     STAGE_SAVE+2
                 ELSE
@@ -1653,12 +1628,12 @@ cmt_strict_hdr  EQU     $00F4   ; LOADM ヘッダ探索の偽 sync 弾き 有効
                 ENDC
                                 ;   0=判定しない / 非0=ブロックタイプ>2 を偽 sync とみなし
                                 ;   リーダー再探索へ戻す。LOADM 実行中 (ilm_args_done〜
-                                ;   ilm_done) のみ立て、LOAD/常駐ローダ入力は 0 のまま。
+                                ;   ilm_done) のみ立て、LOAD/機械語からの入力は 0 のまま。
                                 ;   clr_zp ($00-$7F) の対象外なので LOADM/LOAD 入口で明示制御。
-; USR0〜USR9 のアドレス表 (10 スロット × 2B)。参考書籍「USR0〜USR9
-;   アドレス」($0219-$022C)。DEF USRn が書き、USRn(引数) が読んで呼ぶ。未設定の
+; USR0〜USR9 のアドレス表 (10 スロット × 2B、$0219-$022C)。
+;   DEF USRn が書き、USRn(引数) が読んで呼ぶ。未設定の
 ;   ときは EXEC アドレスと同じく Illegal Function Call の入口 (ramstub_ifc) を指す
-;   (コールドスタートで EXEC_ADDR から連続 11 語を一括で入れる)。
+;   (コールドスタートで EXEC_ADDR から連続 11 ワード (2 バイト) を一括で入れる)。
                 IFDEF   STAGE_ALT_RAM
 usr_slot_tbl    EQU     STAGE_RUNTIME+153
                 ELSE
@@ -1681,11 +1656,11 @@ FIO_ERR         EQU     $00C0   ; 1 文字入力のエラーフラグ (0=正常/
 ;   含む行を検索して導出する (cont_find_line)。
 ;   行頭位置を常駐ワークに持たないのは、INPBUF が 256B (255 文字 + 終端) を
 ;     全域使うため、STOP→CONT の間に長い行を打つと INPBUF の内側に重ねた
-;     位置が踏まれるからである。ZP は全て割当済で移設先が無く、導出方式なら
+;     位置が踏まれるからである。ZP は全て割当済で置き場が無く、導出方式なら
 ;     どの RAM 域にも常駐値を持たず、あらゆる緩衝域の書潰しと無縁になる
 ;     (CONT の有効性は CONTPTR≠0 とプログラム無変更が前提)。
 ; --- TIME$ / DATE$ ワーク ---
-; TIME$ 計時はサブ CPU RTC ($3E/$3D) 参照へ移行。メイン CPU 側の周期タイマ
+; TIME$ の計時はサブ CPU の RTC ($3E/$3D) を参照する。メイン CPU 側の周期タイマ
 ; 割込 (IRQ) は PLAY 割込演奏 (7t_play.inc) への tick 供給専用として残す。
 ; ハンドラは低位 RAM (TICK_ENTRY) に常駐させる (複写元 tick_irq_src を time_init が複写)。
                 IFDEF   STAGE_ALT_RAM
@@ -1742,10 +1717,9 @@ ramstub_ifc     EQU     STAGE_RUNTIME+53
                 ELSE
 ramstub_ifc     EQU     $01B5   ; 未設定の EXEC / USR の入口 (JMP errc_5 = Illegal Function
                 ENDC
-                                ;   Call, 3B)。参考書籍は
-                                ;   EXEC / USR の未設定値を「Illegal Function Call のアドレス」
-                                ;   と定める。当方は ROM 内の誤り送出のアドレスを固定しない
-                                ;   ので、低位 RAM のここで中継する。
+                                ;   Call, 3B)。未設定の EXEC / USR は Illegal Function
+                                ;   Call とする (参考書籍)。当方は ROM 内の誤り送出の
+                                ;   アドレスを固定しないので、低位 RAM のここで中継する。
 
 ; --- PLAY 文 (音楽演奏機能) ワーク (7t_play.inc) ---
 ; 音符キュー PLAYQ はテープの機械語ブロック緩衝 (MLBUF) / SAVE のブロック
@@ -1900,11 +1874,10 @@ SUBCMD_P9       EQU     SUBSTG_BASE+11  ; パラメータ9 (= $FC8B/$D38B)
 SUBCMD_P10      EQU     SUBSTG_BASE+12  ; パラメータ10 (= $FC8C/$D38C)
 SUBCMD_P11      EQU     SUBSTG_BASE+13  ; パラメータ11 (= $FC8D/$D38D)
 
-; --- ROM 疑似変数の RAM 移設 ---
-; ROM オーバレイ ($8000-$FBFF 読出=ROM) が有効の間、この領域への書込は実機では
-; 保持されない。よって書換えを要する作業変数を ROM 内 FCB/FDB で持つと
-; 「書いた値が読めず常に初期値」になる (PSET/LINE の座標が常に 0 になる等)。
-; 全て RAM へ EQU 移設し、初期値はコールドスタートの init_ram_vars が設定する。
+; --- 書換えを要する作業変数の RAM 配置 ---
+; ROM オーバレイ ($8000-$FBFF 読出=ROM) が有効の間、この領域への書込は
+; 保持されない。よって書換えを要する作業変数は ROM 内 FCB/FDB で持たず、
+; 全て RAM に EQU で置き、初期値はコールドスタートの init_ram_vars が設定する。
                 IFDEF   STAGE_ALT_RAM
 tmpX16          EQU     STAGE_IO+0
                 ELSE
@@ -1948,8 +1921,7 @@ disp_state      EQU     STAGE_BUFFER+107
                 ELSE
 disp_state      EQU     $05A8   ; コンソールコントロール (1B, 初期値 $1F)。
                 ENDC
-                                ;   位置は参考書籍「$05A8
-                                ;   コンソールコントロール」。bit0 がカーソルの表示。
+                                ;   bit0 がカーソルの表示。
                                 ;   コンソール制御 ($0C) は「カーソルだけ」ではなく
                                 ;   表示状態を丸ごと受け取る枠なので、bit0 (カーソル
                                 ;   有効) 以外のビットを落とさずに送るには現在値が
@@ -2026,10 +1998,7 @@ STACK_TOP       EQU     $7FFF
 ;   積み上げ、式の入れ子 (括弧・関数の再帰) の各所で「S − STK_RESERVE が STREND を
 ;   割らないこと」を検査し、割るなら Out Of Memory。参考書籍が定める領域の並び
 ;   に固定の区画を足すものではなく、検査の刻み (再帰 1 段 + そこから先の
-;   呼出の深さ) を覆う値である。内部の自動テストと公開する互換性テストの走行で
-;   文の切れ目からの最深到達を計測して定めた (内部の自動テスト 25 本と公開する
-;   互換性テスト 135 本を、命令ごとに S と EXEC_SP を採りながら走らせた最深値は
-;   124 バイト = 使用者定義関数の入れ子。これを覆う 128 とする)。
+;   呼出の深さ。最も深いのは使用者定義関数の入れ子) を覆う値である。
 STK_RESERVE     EQU     128
 ; CONSOLE のスクロール領域の上限行数の既定値 (起動直後の値)。
 ; 上限は WIDTH の**行数指定**で 20 / 25 に変わり、現在値は con_rows が持つ。
@@ -2040,8 +2009,7 @@ CON_ROWS        EQU     20
 ; ファンクションコード（グラフィック描画モード）
 ;   サブシステム (pb1_fntbl) の raster-op 定数表と一致させること:
 ;     0=PSET / 1=PRESET / 2=OR / 3=AND / 4=XOR / 5=NOT。
-;   参考書籍の F-BASIC も OR=2 / AND=3 で送る。AND=2/OR=3 と取り違えると、
-;   PUT@/PUT@A/LINE の OR と AND が入れ替わって描画されていた (是正)。
+;   参考書籍のとおり OR=2 / AND=3 で送る。
 FUNC_PSET       EQU     0               ; ドット書込み
 FUNC_PRESET     EQU     1               ; ドット消去
 FUNC_OR         EQU     2               ; OR

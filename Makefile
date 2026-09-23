@@ -12,7 +12,7 @@
 #   FM-7 系:
 #     boot_bas.rom :   512 B  ($FE00-$FFFF   BASIC モード起動ブート)
 #     boot_dos.rom :   512 B  ($FE00-$FFFF   ディスク起動ブート)
-#     subsys_c.rom : 10240 B  ($D800-$FFFF   サブ CPU 互換。先頭 2KB は ANK フォント)
+#     subsys_c.rom : 10240 B  ($D800-$FFFF   サブシステム。先頭 2KB は ANK フォント)
 #   FM77AV 系:
 #     initiate.rom :  8192 B  (メイン CPU $6000-$7FFF イニシエート、上位世代向け)
 #     initbase.rom :  8192 B  (同上の中位世代 (20 系) 向け変種。機種識別域のみ相違)
@@ -42,7 +42,7 @@ include config.mk
 #   これらはいずれも「BUILD を外部から差し替えられる」ことに起因する。そこで出力先は
 #   config.mk (リポジトリ内・信頼できる設定ファイル、origin=file) でのみ設定可とし、
 #   コマンドライン・環境変数からの上書きは、最初の参照より前に一律で拒否する。
-#   config.mk を編集して出力先を変える用途は従来どおり可能。通常の `make` は
+#   config.mk を編集すれば出力先を変えられる。通常の `make` は
 #   BUILD を指定しないため影響を受けない。
 #   本ブロックは config.mk の直後・BUILD のどの参照 (target-specific := を含む)
 #   よりも前に置く。target-specific := は解釈時に全ターゲット分が展開されるため、
@@ -58,18 +58,12 @@ endif
 # デフォルト: 配布 ROM をすべてビルド (MIT セット + データ ROM)
 all: $(addprefix $(BUILD)/,$(addsuffix .rom,$(ALL_TARGETS)))
 
-# --- 配布 ROM 差替 (真のビルド出力 → roms/) + バイト一致ゲート + SHA256SUMS ---
-#   配布用 roms/ が常に「最新ソースのビルド産物」であることを保証する恒久手順。
-#   手順: 全再ビルド(all) → build/ から roms/ へコピー → build と roms の
-#         バイト一致を全数検査 (不一致は exit 1) → SHA256SUMS を再生成。
-#   デプロイ前・コミット前に必ず本ターゲットを通すこと (as-is 配布を防ぐ真因対策)。
+# --- 配布 ROM 差替 (build/ → roms/) + SHA256SUMS ---
+#   全再ビルドの産物を roms/ へ写し、SHA256SUMS を作り直す。
 ROMS_LIST = $(addsuffix .rom,$(ALL_TARGETS))
 #   SHA256SUMS の対象は config.mk の TARGETS / DATA_TARGETS から導いた 15 本に限る
 #   (roms/*.rom のワイルドカードだと、置き忘れた余分な .rom まで拾ってしまう)。
-#   複写した直後の cmp は必ず一致するため置いていない。「roms/ が最新ソースの
-#   産物である」ことの非自明な検査は verify-release が行う (クリーンビルドの
-#   産物とチェックイン済み roms/ を突き合わせる)。ここでは複写の成否とサイズ
-#   だけを確かめる。
+#   ここでは複写の成否とサイズを確かめる。クリーンビルドとの一致は verify-release が見る。
 deploy-roms: all
 	@mkdir -p roms
 	@set -e; for r in $(ROMS_LIST); do \
@@ -104,14 +98,8 @@ devtest-subsys:
 	  --build-dir $(BUILD)/devtest/subsys
 
 # --- フォント生成物のハッシュ照合 + 収録範囲の照合 ---
-#   fonts/SHA256SUMS に置いた SHA-256 を唯一の情報源として読み取り、
-#   scripts/genfont.py / genfont16.py の生成物と突き合わせる。続けて
-#   docs/LEGAL.md §8.1 の収録範囲の 2 表を scripts/check_font_repertoire.py が
-#   実測と照合する。ハッシュ照合はバイト列そのものの一致を、収録範囲の照合は
-#   「どの符号位置に字形があるか」の記述の正しさを見る (ハッシュが一致していても
-#   文書の説明が誤っている状態は前者では検出できないため、両方を毎回必ず通す)。
-#   文書と生成物が食い違ったまま配布されることを防ぐ (verify-release から毎回必ず呼ばれる)。
-#   ハッシュの値は Markdown には置かない (機械照合用ファイル fonts/SHA256SUMS だけに置く)。
+#   scripts/genfont.py / genfont16.py の生成物について、fonts/SHA256SUMS との照合と、
+#   docs/LEGAL.md §8.1 の 2 表との照合 (scripts/check_font_repertoire.py) を行う。
 FONT_SUMS = $(FONTS)/SHA256SUMS
 FONT_BINS = font.bin font16.bin
 verify-fonts: $(BUILD)/font.bin $(BUILD)/font16.bin
@@ -234,7 +222,7 @@ $(BUILD)/boot_bas.rom: $(SRC)/boot_bas/boot.s | $(BUILD)
 $(BUILD)/boot_dos.rom: $(SRC)/boot_dos/boot.s | $(BUILD)
 	$(AS) -fraw -o $@ -l$(BUILD)/boot_dos.lst $<
 
-# --- FM-7: subsys_c.rom (サブ CPU 互換 ROM。先頭にフォントを INCLUDEBIN) ---
+# --- FM-7: subsys_c.rom (サブシステム ROM。先頭にフォントを INCLUDEBIN) ---
 #   $D800-$DFFF はフォントデータ専用 (font.bin 全体 2KB)。実行コードを
 #   この範囲へ置いてはならない (subsys.s 冒頭の設計制約コメント参照)。
 $(BUILD)/subsys_c.rom: $(SRC)/subsys_c/subsys.s $(BUILD)/font.bin | $(BUILD)
@@ -298,15 +286,15 @@ $(BUILD)/subsyscg.rom: $(SRC)/subsyscg/subsyscg.s $(BUILD)/font.bin | $(BUILD)
 # --- FM77AV40EX/SX: extsub.rom (拡張サブシステム ROM、49152 B) ---
 #   24KB の拡張サブシステムイメージ 2 セット (CGRAM 16KB + 実行ページ 8KB) の枠。
 #   本バージョンはフォント部 (8x16 ANK / 8x8 ANK) のみを実装し、実行ページに相当する
-#   領域はゼロ埋めのプレースホルダ。所定の長さでないと初期化が成立しないため、
-#   サイズ 49152 B は verify で厳格に検査する。
+#   領域はゼロ埋めのプレースホルダ。所定のサイズを供給する枠で、サイズ 49152 B は
+#   verify で検査する。
 $(BUILD)/extsub.rom: $(SRC)/extsub/extsub.s $(BUILD)/font.bin $(BUILD)/font16.bin | $(BUILD)
 	$(AS) -fraw -o $@ -l$(BUILD)/extsub.lst -I$(BUILD) $(SRC)/extsub/extsub.s
 
-# --- 7T-BASIC 3.1: 7tbasic3.rom (F-BASIC 互換 BASIC インタプリタ本体) ---
+# --- 7T-BASIC 3.1: 7tbasic3.rom (BASIC インタプリタ本体) ---
 #   src/7tbasic3/ から独立実装をアセンブルする。raw 32768 B ($8000-$FFFF) を
 #   配布サイズ 31744 B ($8000-$FBFF) へ切詰めて配布 ROM とする。
-#   ($FC00-$FFFF は実機で共有 RAM/I/O/ブート ROM/ベクタがオーバーレイし
+#   ($FC00-$FFFF は共有 RAM/I/O/ブート ROM/ベクタがオーバーレイし
 #    ROM としては参照されないため末尾を切詰める)
 7TBASIC3_SRCS = $(wildcard $(SRC)/7tbasic3/common/*.inc $(SRC)/7tbasic3/common/*.s \
                            $(SRC)/7tbasic3/7t31/*.inc $(SRC)/7tbasic3/7t31/*.s)
@@ -340,7 +328,7 @@ $(BUILD)/kanji2.rom: $(BUILD)/kanji.rom
 	@test -f $@
 
 # --- 辞書 ROM の枠 (dicrom.rom、262144 B) ---
-#   拡張世代 (EX/SX 系) の機種構成が前提とする所定サイズを供給する枠。
+#   拡張世代 (EX/SX 系) 向けの所定のサイズを供給する枠。
 #   全域 0x00 で、かな漢字変換 (日本語入力) の機能は実装していない
 #   (位置づけは extsub.rom と同じ。docs/COMPATIBILITY.md)。
 $(BUILD)/dicrom.rom: $(SCRIPTS)/gendicrom.py | $(BUILD)
@@ -364,8 +352,7 @@ fi
 endef
 
 # --- バージョンの表示 (配布物のバージョンと BASIC のバージョンは別採番である旨を毎回そえる) ---
-#   配布物のバージョンは config.mk の DIST_VERSION が唯一の情報源。公開文書との一致は
-#   リポジトリ管理側の整合ゲートが機械照合する。
+#   配布物のバージョンは config.mk の DIST_VERSION が唯一の情報源。
 #   7T-BASIC のバージョンは BASIC インタプリタ本体が持つバージョンで、DIST_VERSION とは連動しない。
 version:
 	@printf "配布物のバージョン  : v%s  (タグ名の想定: v%s)\n" "$(DIST_VERSION)" "$(DIST_VERSION)"
@@ -382,8 +369,7 @@ clean: check-build-path
 #   展開前ガードが一律で拒否する。危険値 (make 関数構文・シェルメタ文字・空値・
 #   .git 等の追跡ディレクトリ・安全に見える普通の値) を、コマンドライン経路と
 #   `make -e` の環境変数経路の双方で与えても、必ず終了値 != 0 で拒否され、かつ
-#   コマンドが実行されない (マーカー非生成) ことを検査する。公開前の検査で毎回呼ばれ、
-#   リグレッションを防ぐ。マーカーは build/ 配下に置き、tmp を使わない。
+#   コマンドが実行されない (マーカー非生成) ことを検査する。マーカーは build/ 配下に置く。
 #==============================================================================
 check-build-guard:
 	@set -e; \

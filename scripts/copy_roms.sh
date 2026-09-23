@@ -25,7 +25,7 @@
 # 注意:
 #   - build/ は .gitignore 済みです。roms/ に置くのは、本プロジェクトがソースから
 #     ビルドした上記の ROM だけです。
-#   - roms/7tbasic3.rom (F-BASIC 互換 BASIC インタプリタ本体) も他の代替 ROM と
+#   - roms/7tbasic3.rom (BASIC インタプリタ本体) も他の代替 ROM と
 #     同じく MIT ライセンス・ソース公開です。ソースは src/7tbasic3/ にあります。
 #     詳細は LICENSE を参照してください。
 #   - データ ROM 3 本 (roms/kanji.rom / roms/kanji2.rom / roms/dicrom.rom) は
@@ -100,8 +100,7 @@ for name in ${ALL_TARGETS}; do
 
   cp "${src}" "${dst}"
   sz="$(filesize "${dst}")"
-  # サイズ検査に加え、build 産物と roms/ のバイト一致を検査する
-  # (roms/ が旧世代のまま出る事故を防ぐ真因対策)。
+  # サイズに加え build 産物と roms/ のバイト一致を検査する。
   if [ "${sz}" != "${expect}" ]; then
     printf "[NG]   %-16s サイズ %s B (期待 %s B)\n" "${name}.rom" "${sz}" "${expect}"
     rc=1

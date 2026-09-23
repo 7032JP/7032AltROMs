@@ -12,13 +12,8 @@ scripts/kanji_glyph_overrides.py が独自字形を定義する 107 符号位置
 いている文字のリスト」として 16 ドット節に列挙する 107 字に対応する。
 
 同梱の改変した BDF はこの 107 符号位置に字形を持たない。ROM を組み立てる
-scripts/genkanji.py は当該 107 符号位置へ scripts/kanji_glyph_overrides.py の
-独自字形を必ず適用するため、改変した BDF を入力にしても生成される ROM のバイト列は
-変わらない (docs/LEGAL.md §9.2)。
-
-東雲フォントファミリーの配布条件は「自由な改造、他フォーマットへの変換、
-組込み、再配布を行うことができます」と明文で述べており、本ツールによる改変と
-改変したものの再配布はその許諾の範囲に含まれる (fonts/shinonome/LICENSE)。
+scripts/genkanji.py が当該 107 符号位置へ scripts/kanji_glyph_overrides.py の
+独自字形を適用する (docs/LEGAL.md §9.2)。
 
 リポジトリには改変した BDF だけを置く。配布物そのもの (アーカイブ・無改変の BDF) は
 同梱しない。第三者が同じ改変結果を再現・検証したい場合は、docs/LEGAL.md §10 に
