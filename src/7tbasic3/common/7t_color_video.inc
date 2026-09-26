@@ -368,8 +368,10 @@ bios_sub_cmd:
                 ; A = サブシステムへ発行するコマンド (相対 3 は 0)。直前の完了を待って
                 ; HALT し、共有 RAM へ置いて RUN、完了 (BUSY → 0) を待って再び HALT
                 ; した状態で戻る (応答は共有 RAM から直接読める)。壊す: A, B。
+                ; gfx_halt は A を壊し B を保つので、コマンドは B に移して持ち越す。
+                TFR     A,B
                 BSR     gfx_halt
-                STA     SUBCMD_BASE+2   ; $FC82 = コマンド
+                STB     SUBCMD_BASE+2   ; $FC82 = コマンド
                 CLR     SUBCMD_BASE+3   ; $FC83 = 0 (制御フラグ / N)
                 CLR     PORT_SUBCPU     ; RUN
                 BRA     gfx_halt        ; 完了同期 + 読み戻し用 HALT

@@ -830,13 +830,6 @@ fio_dev:
 fdv_kybd:
                 LDB     #$60            ; KYBD: = 物理機番 0 + 入出力
                 RTS
-fio_e52:
-                LDB     #52             ; File Already Open
-                BRA     fio_errb
-fio_e60:
-                LDB     #60             ; Device Unavailable
-fio_errb:
-                JMP     impl_error_handler
 
                 IFNDEF  STAGE_ALT_RAM
                 ZMB     $DAEF-*
@@ -858,6 +851,17 @@ scr_func_set:
                 STD     SUBCMD_CMD      ; cmd=$0C, パラメタ=B
                 JMP     impl_sub_send_cmd       ; 末尾呼出
                 ; 表示状態の初期化 + A=1 (区画の都合でプール) (ここへ展開)
+
+;------------------------------------------------------------------------------
+; fio_e52 / fio_e60 — OPEN / CLOSE の誤りの出口
+;------------------------------------------------------------------------------
+fio_e52:
+                LDB     #52             ; File Already Open
+                BRA     fio_errb
+fio_e60:
+                LDB     #60             ; Device Unavailable
+fio_errb:
+                JMP     impl_error_handler
 
 ; cmt_gap_out — ギャップ ($FF) を B バイト書き出す (区画の都合でこちらのプールへ
 ;   配置。位置依存は無い)。先導のギャップと末尾のエンドギャップが共用する。

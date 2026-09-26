@@ -68,7 +68,7 @@ make
 | `make verify-fonts` | `build/font.bin` / `build/font16.bin` のハッシュを [`fonts/SHA256SUMS`](../fonts/SHA256SUMS) と照合し、非ゼロ符号位置の集合を [LEGAL.md](LEGAL.md) §8.1 の 2 表と照合する（`verify-release` から自動で呼ばれる） |
 | `make verify-kanji` | 同梱の入力 BDF とライセンス文のハッシュを [`fonts/SHA256SUMS`](../fonts/SHA256SUMS) と、`build/kanji.rom` / `build/kanji2.rom` のハッシュを [SHA256SUMS](../SHA256SUMS) と照合し、独自字形 107 符号位置の到達先の枠と内容を全数照合する（`verify-release` から自動で呼ばれる） |
 | `make deploy-roms` | 保守用。全再ビルドののち `build/` の産物を `roms/` へ複写し、`SHA256SUMS` を作り直す（`make` の後に `bash scripts/copy_roms.sh` を実行しても同じ） |
-| `make version` | 配布物のバージョン（`v1.0.2`）と 7T-BASIC のバージョン（`3.1`）を表示する |
+| `make version` | 配布物のバージョン（`v1.0.3`）と 7T-BASIC のバージョン（`3.1`）を表示する |
 | `make check-build-path` | 外部から与えた `BUILD` の値が削除してよいパスかを検査する（`make clean` から自動で呼ばれる） |
 | `make check-build-guard` | 外部入力 `BUILD` の安全ガードを負例で検査する（ROM は作らない。検査の詳細は Makefile のコメントに記載） |
 | `make clean` | `build/` をまるごと削除する |
@@ -234,7 +234,7 @@ python3 scripts/strip_bdf_chars.py <配布物>/bdf/shnmk16.bdf \
 | スクリプト | 役割 |
 | --- | --- |
 | `gen_7t_keywords.py` | 7T-BASIC の予約語表・ジャンプ表・二次予約語表・トークン定数を、予約語の一覧から同じ並びで生成します。`--check` を付けると書き換えずに照合だけを行い、一覧と `src/7tbasic3/common/` の各表が食い違うと異常終了します |
-| `gen_subsys_tests.py` | `src/devtest/subsys/cases/*.s` 129 件を組み立て、追跡済み BASIC ローダの `DATA` 列と一致するか照合します（`make devtest-subsys`）。`--write` で追跡済みローダを更新します |
+| `gen_subsys_tests.py` | `src/devtest/subsys/cases/*.s` 130 件を組み立て、追跡済み BASIC ローダの `DATA` 列と一致するか照合します（`make devtest-subsys`）。`--write` で追跡済みローダを更新します |
 | `genfont.py` | 8x8 ANK フォント生成（`build/font.bin`、2048 バイト）。字形は本プロジェクトの独自設計で、実体はこのスクリプトにあります（[LEGAL.md](LEGAL.md) §8）。`make` から自動で呼ばれます |
 | `genfont16.py` | 8x16 ANK フォント生成（`build/font16.bin`、4096 バイト）。`build/font.bin` を縦 2 倍にして生成します。`make` から自動で呼ばれます |
 | `check_font_repertoire.py` | 生成済み ANK フォントの字形のある符号位置を、[LEGAL.md](LEGAL.md) §8.1 の 2 表と機械照合します（`make verify-fonts` から自動で呼ばれます） |
@@ -338,8 +338,8 @@ python3 scripts/strip_bdf_chars.py <配布物>/bdf/shnmk16.bdf \
 
 | 系統 | 置き場所 | 件数 | 何を確かめるか |
 | --- | --- | ---: | --- |
-| BASIC の言語仕様（§6.1） | [../src/devtest/cases/](../src/devtest/cases/) | `src/devtest/cases/` に 145 本 | [BASIC_REFERENCE.md](BASIC_REFERENCE.md) が「サポートする」と記載する予約語（コマンド・ステートメント・関数・演算子・特殊変数）の動作 |
-| サブシステム ROM の機能（§6.2） | [../src/devtest/subsys/cases/](../src/devtest/subsys/cases/) | `src/devtest/subsys/cases/` に 129 件 | サブ CPU の ROM（`subsys_c` / `subsys_a` / `subsys_b`）が受け付けるコマンドを 1 件ずつ発行し、応答と画面を観測する |
+| BASIC の言語仕様（§6.1） | [../src/devtest/cases/](../src/devtest/cases/) | `src/devtest/cases/` に 146 本 | [BASIC_REFERENCE.md](BASIC_REFERENCE.md) が「サポートする」と記載する予約語（コマンド・ステートメント・関数・演算子・特殊変数）の動作 |
+| サブシステム ROM の機能（§6.2） | [../src/devtest/subsys/cases/](../src/devtest/subsys/cases/) | `src/devtest/subsys/cases/` に 130 件 | サブ CPU の ROM（`subsys_c` / `subsys_a` / `subsys_b`）が受け付けるコマンドを 1 件ずつ発行し、応答と画面を観測する |
 
 入力（`.bas` / `.s` / `.stdin`）と期待値はそのまま公開しています。実行環境は自由に選べます。画面や音源レジスタの読み取りは実行環境の機能に頼るので、その手段はこの文書では定めません。読み取れない環境では、画面と音を目視と耳で確かめます。カセットテープやディスクへの読み書きを伴うコマンドとディスク起動は、結果が媒体と装置の状態に左右されるので、この 2 系統には含めず手で確かめます（§6.3）。`src/devtest/` の内容（`.bas`・`.s`・期待値ファイル）は MIT License（[../LICENSE](../LICENSE)）です。
 
@@ -371,7 +371,7 @@ python3 scripts/strip_bdf_chars.py <配布物>/bdf/shnmk16.bdf \
 | using | `using_*` / `using_e*` | PRINT USING の数値・文字列書式（指数形式 `^^^^` を含む） |
 | print | `print_*` | PRINT の区切り（`;` `,` TAB SPC）と折返し、省略形 `?` |
 | err | `err_*` / `resume_*` | 実行時エラーの表示書式とエラーコード、ERR/ERL、RESUME の再開位置 |
-| fn | `fn_*` / `usr_*` / `erase_*` | DEF FN、DEF USR / USR / EXEC（機械語の呼び出し）、ERASE |
+| fn | `fn_*` / `usr_*` / `keyin_*` / `erase_*` | DEF FN、DEF USR / USR / EXEC（機械語の呼び出し）、機械語 I/O サービスの KEYIN、ERASE |
 | scr | `locarg_*` / `locate_*` / `pos_*` / `key_*` / `cons_*` | 画面制御文の引数の文法（LOCATE）、カーソルを移した先の桁と行（LOCATE / POS）、KEY / KEY LIST、CONSOLE の機能キー行表示と単色表示 |
 | sys | `sys_*` / `intv_*` / `time_*` | システム関数（PEEK/POKE、VARPTR、TIME$/DATE$）、INTERVAL 割込み、タイマ割込み |
 | gfx | `gfx_*` / `circ_*` / `gcur_*` | 画面と配列の間の転送文（GET@/PUT@）、図形の引数と座標の丸め（POINT による読み取り）、GCURSOR の座標の読取り |
@@ -489,6 +489,7 @@ python3 scripts/strip_bdf_chars.py <配布物>/bdf/shnmk16.bdf \
 | `inpredo_01` `inpredo_02` | ?Redo From Start（やり直し）、INPUT はエラーにならない |
 | `intv_01` | INTERVAL / ON INTERVAL GOSUB、引数の誤り（0 / なし / 2 個 / GOTO 形） |
 | `key_01` | KEY の割り当て・消去・KEY LIST、KEY ON は Syntax Error |
+| `keyin_01` | 機械語 I/O サービスの KEYIN（リクエスト番号 21、`JSR [$FBFA]`）。キーを押さないとき、データバッファの +1 が 0、+0 が応答のキーコードと同じ値、エラーステータス 0・データバイト数 2 になり、サブシステムの誤りが無いこと（共有 RAM の応答域とデータバッファを先に 0 以外の値で染めて確かめる） |
 | `linp_01` | LINE INPUT（引用符そのまま・TAB・空行・行末空白）、INPUT のプロンプト `,` |
 | `list_01` `list_02` | LIST（カナの保持、範囲指定、表示後は直接モードへ） |
 | `locarg_01` | LOCATE の引数の文法（省略の可否と誤りの区別） |
@@ -543,15 +544,15 @@ Type-A の位置に置く ROM は Type-C と同じコマンドの集合を提供
 
 | パス | 内容 |
 | --- | --- |
-| `<ID>.s` | コマンドの発行・応答取得・画面観測を行う 6809 のサンプルソース（129 件） |
-| `<ID>.bas` | `RUN` するだけで走る BASIC プログラム（129 件とも `.s` から生成したローダ） |
+| `<ID>.s` | コマンドの発行・応答取得・画面観測を行う 6809 のサンプルソース（130 件） |
+| `<ID>.bas` | `RUN` するだけで走る BASIC プログラム（130 件とも `.s` から生成したローダ） |
 | `<ID>.expected` | 本実装を動かして得た期待結果 |
 | `<ID>.stdin` | 走らせている間に打鍵として与える入力（キー入力を待つコマンドのテストだけが持ちます） |
-| `subsysrt.inc` | 129 件で共用するコマンド発行・観測・報告用ランタイム |
+| `subsysrt.inc` | 130 件で共用するコマンド発行・観測・報告用ランタイム |
 
 生成ローダは `.s` を組み立てた機械語を `DATA` 文として持ち、`$6000` へ `POKE` して `EXEC` します。`.bin` は配布せず、`build/devtest/subsys/` にだけ置きます。`.s` が一次資料で、`.bas` の `DATA` 列は `make devtest-subsys` で再生成・照合できます。意図的に `.s` を変更したときは `python3 scripts/gen_subsys_tests.py --write` で追跡済みローダを更新します。
 
-各 `.s` の `CMDTAB` が発行するコマンド列、`OBSTAB` が観測する項目です。コマンドの発行、BUSY の待機、分割応答の継続要求 `$64` は `subsysrt.inc` が行います。パターンを `$64` で分けて送る試験（`tc1c_02`）は `RT_CONT` を定義し、応答種別 `$FA` のレコードを継続フラグ 1 で発行します。Type-C / Type-A / Type-B ではカーソル停止 `$0C` と全消去 `$02` を前処理にしています。BASIC の描画文から駆動する 9 件（`tcbas_*`）は、`.s` の `; @bas` 行に BASIC の行を持ち、生成ローダがそれを機械語の読込みと観測の間に挟みます。
+各 `.s` の `CMDTAB` が発行するコマンド列、`OBSTAB` が観測する項目です。コマンドの発行、BUSY の待機、分割応答の継続要求 `$64` は `subsysrt.inc` が行います。パターンを `$64` で分けて送る試験（`tc1c_02`）は `RT_CONT` を定義し、応答種別 `$FA` のレコードを継続フラグ 1 で発行します。Type-C / Type-A / Type-B ではカーソル停止 `$0C` と全消去 `$02` を前処理にしています。BASIC の描画文から駆動する 10 件（`tcbas_*`）は、`.s` の `; @bas` 行に BASIC の行を持ち、生成ローダがそれを機械語の読込みと観測の間に挟みます。
 
 観測を終えたランタイムは、表示制御 `$0C` を既定値 `$17` へ戻してから呼出元へ帰ります。戻さないと、呼出元の BASIC が改行を字形として描いてしまい報告が読めません。
 
@@ -673,6 +674,7 @@ Type-A の位置に置く ROM は Type-C と同じコマンドの集合を提供
 | `tcbas_07` | 機械語 I/O サービスの OUTPUT（リクエスト番号 20 = `$14`、`JSR [$FBFA]`） | 制御ブロックで渡した 3 文字が描かれる |
 | `tcbas_08` | 起動直後のテキスト書式（40 桁 × 20 行）と文字セルの塗り替え | 行 1 のセル（`y=10..19`）が全高で消え、行 0 と隣の桁は無傷 |
 | `tcbas_09` | `CONSOLE` 文のスクロール領域（80 桁 × 20 行・16 行目から 4 行）と、その領域だけのスクロール | 領域の 1 行上（`y=150..159`）は動かず、領域の最下行の内容が 1 行上（`y=180..189`）へ移り、最下行は消える |
+| `tcbas_10` | `GET@` で読んだ 64×64 の図形を `PUT@`（`PSET`）で書き戻す（1 面 512 バイトのパターンを継続フラグ 1 の矩形書込み 1 と継続コマンド `$64` に分けて送る） | 写しの点の数が元と同じ 1258 個で、行 15〜63 にも 1152 個が描かれ、0 のビットの点は先に塗った色のまま残る |
 
 #### 収録していない機能とその理由
 
@@ -680,7 +682,7 @@ Type-A の位置に置く ROM は Type-C と同じコマンドの集合を提供
 | --- | --- |
 | `$3F` の `$92`（分岐） | 分岐だけでは外から観測できる副作用が生じません。転送・呼出・停止・不正コードは収録しています |
 | `$3E` の時々刻々と進む値（時刻の最下位桁・間隔カウンタ） | サブ CPU の周期処理が絶えず書き換えるので、値が定まりません。照合対象はフラグ値と時・分・秒に絞っています |
-| BASIC の `GET@`（配列への読出し） | 矩形の読出しそのものは `tc1b_01` / `tc1d_01` で確かめています。BASIC 文からの経路はこの系統では扱いません |
+| BASIC の `GET@`（配列への読出し） | 矩形の読出しそのものは `tc1b_01` / `tc1d_01` で確かめています。BASIC 文からの経路はこの系統では扱いません（`tcbas_10` は `PUT@` に渡す配列を作るためにだけ使います） |
 
 ### 6.3 手で行うテスト（媒体の用意を伴うもの）
 
