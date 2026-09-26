@@ -33,7 +33,7 @@ SCRIPTS = scripts
 #   配布物のバージョンは独立して採番する。
 #   7T-BASIC のバージョンは 3.1 のままで、こことは連動しない (src/7tbasic3/ 側が持つ)。
 #   公開時のタグ名は "v$(DIST_VERSION)" を想定する。
-DIST_VERSION = 1.0.1
+DIST_VERSION = 1.0.2
 
 # 第三者のビットマップフォント (パブリックドメイン宣言つき) の同梱先
 #   16x16 漢字フォント ROM の字形の入力に用います (docs/LEGAL.md §9)。

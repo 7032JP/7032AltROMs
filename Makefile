@@ -236,7 +236,7 @@ $(BUILD)/boot_init.rom: $(SRC)/boot_init/boot.s | $(BUILD)
 
 # --- FM77AV: avboot.bin (initiate に埋め込む AV ブートイメージ、640 B) ---
 #   RAM 上の AVBOOT_ORG (本プロジェクトが選んだ位置) 基底の AV ブートイメージ。起動モード判定 + メディア存在プリフライト +
-#   F-BASIC フォールバック + FDC サービス表を供給する中間生成物。
+#   BASIC フォールバック + FDC サービス表を供給する中間生成物。
 $(BUILD)/avboot.bin: $(SRC)/initiate/avboot.s | $(BUILD)
 	$(AS) -fraw -o $@ -l$(BUILD)/avboot.lst $(SRC)/initiate/avboot.s
 

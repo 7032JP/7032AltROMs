@@ -14,8 +14,8 @@
 ;   第 1 世代の変種へ本イメージを取込んではならない。
 ;
 ; 役割:
-;   1. BREAK 押下リセット ($FD04 bit1=0) のみ BASIC 強制: F-BASIC コールド
-;      コールド入口へ引渡す。FDC には一切触れない。
+;   1. BREAK 押下リセット ($FD04 bit1=0) のみ BASIC 強制: BASIC のコールド入口へ
+;      引渡す。FDC には一切触れない。
 ;   2. それ以外は起動モード (BASIC/DOS) に依らず、**ドライブ 0 → 1 → 2 → 3 の
 ;      順に**起動 (IPL ロード) を試行する。
 ;      各ドライブについて
@@ -56,15 +56,14 @@ BOOTSVC_RW      EQU     $FE08           ; 起動 ROM の DREAD 入口 (参考書
 ; --- BASIC の起動ベクタ ---
 ;   当方の BASIC ROM (7tbasic3) は目印 ("7T") と 2 つの起動ベクタを BASVEC_* に置く
 ;   (当方が独自に選んだアドレス)。目印が無い BASIC ROM のときは、参考書籍に載る
-;   とおり、BREAK キー ON ならホットスタート $8684、ディスク起動の不成立なら
-;   コールドスタート $848B (A = 0 で ROM モード) へ直接飛ぶ。
+;   入口へ直接飛ぶ。
 BASVEC_SIG      EQU     $FBF4           ; 目印 ("7T")
 BASVEC_COLDVEC  EQU     $FBF6           ; +0 [.]=コールド入口 / +2 [.]=二次/ウォーム入口 (A=0 必須)
                 IFNDEF  STAGE_ALT_RAM
-FBASIC_HOT      EQU     $8684           ; BASIC ホットスタート (参考書籍)
+BASIC_HOT       EQU     $8684           ; BASIC ホットスタート (参考書籍)
                 ENDC
                 IFNDEF  STAGE_ALT_RAM
-FBASIC_COLD     EQU     $848B           ; BASIC コールドスタート (同上、A = 0 で ROM モード)
+BASIC_COLD      EQU     $848B           ; BASIC コールドスタート (同上、A = 0 で ROM モード)
                 ENDC
                 IFNDEF  STAGE_ALT_RAM
 IPL_LOAD        EQU     $0100           ; IPL ロード先 / 実行先 (起動モードに依らず)
@@ -81,7 +80,7 @@ BUZZER_ON       EQU     $81             ; $FD03 書込 bit7 = 連続ブザー + 
 FD_BUZZER       EQU     $03             ; $FD03 書込 = ブザー
 FD_BOOTJP       EQU     $04             ; bit1 = 0:BREAK 押下 (BASIC 強制)
 FD_BOOTDET      EQU     $0B             ; bit0 = 起動モード (0=BASIC/1=DOS)
-FD_AUXMODE      EQU     $0F             ; 読取 = F-BASIC ROM 有効化
+FD_AUXMODE      EQU     $0F             ; 読取 = BASIC ROM 有効化
 FDC_CMD         EQU     $18             ; $FD18 W=コマンド / R=ステータス
 FDC_SIDE        EQU     $1C             ; $FD1C サイド (bit0)
 FDC_MOTOR_DRV   EQU     $1D             ; $FD1D bit7=motor, bits1:0=drive
@@ -203,9 +202,8 @@ nb_drv_ok:
 
 ;------------------------------------------------------------------------------
 ; nb_cold — BREAK 強制時の BASIC 起動 (FDC 非接触)
-;   当方の BASIC ROM ならコールド入口、目印が無い BASIC ROM ならホットスタート
-;   $8684 (参考書籍に載る BREAK キー ON の経路)。BASIC ROM 有効化 ($FD0F 読取) は
-;   initiate 本体が BASIC イメージ選択時に実施済み。
+;   当方の BASIC ROM ならコールド入口、目印が無い BASIC ROM ならホットスタート (参考書籍)。
+;   BASIC ROM 有効化 ($FD0F 読取) は initiate 本体が BASIC イメージ選択時に実施済み。
 ;------------------------------------------------------------------------------
 nb_cold:
                 CLRB                    ; +0
@@ -213,15 +211,15 @@ nb_cold:
 ;------------------------------------------------------------------------------
 ; nb_basic — ディスク起動不成立時の BASIC フォールバック
 ;   $FD0F 読取で BASIC ROM を有効化し、当方の BASIC ROM なら二次/ウォーム入口、
-;   目印が無い BASIC ROM ならコールドスタート $848B (参考書籍に載る読込失敗の経路) へ。
+;   目印が無い BASIC ROM ならコールドスタート (参考書籍) へ。
 ;------------------------------------------------------------------------------
 nb_basic:
                 LDA     <FD_AUXMODE     ; $FD0F 読取 = BASIC ROM 有効化
                 LDB     #2              ; +2
 nb_vec:
                 ; 目印 ("7T") が一致すれば当方の BASIC ROM の起動ベクタの表を、
-                ;   一致しなければ本イメージ内の表 nb_fbasic_ent を、同じ添字 B で引く。
-                LDX     #nb_fbasic_ent  ; 既定 = 目印が無い BASIC ROM の飛び先の表
+                ;   一致しなければ本イメージ内の表 nb_basic_ent を、同じ添字 B で引く。
+                LDX     #nb_basic_ent   ; 既定 = 目印が無い BASIC ROM の飛び先の表
                 LDU     BASVEC_SIG
                 CMPU    #$3754          ; "7T" = 当方の BASIC ROM
                 BNE     nb_v_take
@@ -237,8 +235,8 @@ nb_go:
                 CLRA                    ; A=0 (入口規約: ROM モード / RAM 上限既定)
                 TFR     A,DP            ; DP=$00
                 JMP     ,X
-nb_fbasic_ent:  FDB     FBASIC_HOT      ; +0: BREAK キー ON → ホットスタート $8684
-                FDB     FBASIC_COLD     ; +2: ディスク起動不成立 → コールドスタート $848B
+nb_basic_ent:   FDB     BASIC_HOT       ; +0: BREAK キー ON → ホットスタート
+                FDB     BASIC_COLD      ; +2: ディスク起動不成立 → コールドスタート
 
 ;------------------------------------------------------------------------------
 ; nb_ipl_load — ドライブ 1-3 からの起動 (本イメージが IPL をロードして起動する)

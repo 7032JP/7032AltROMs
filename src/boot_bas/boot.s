@@ -16,8 +16,7 @@
 ;
 ; BASIC の飛び先:
 ;   当方の BASIC ROM (7tbasic3) は目印 "7T" ($FBF4) と起動ベクタ ($FBF6 コールド /
-;   $FBF8 二次) を置く。目印があればそのベクタを、無ければ参考書籍に載るホットスタート
-;   $8684 / コールドスタート $848B を使う。
+;   $FBF8 二次) を置く。目印があればそのベクタを、無ければ参考書籍に載る入口を使う。
 ;
 ; ディスク BIOS:
 ;   $FE02 RESTOR / $FE05 DWRITE / $FE08 DREAD (参考書籍)。X = RCB で
@@ -32,10 +31,10 @@ BASVEC_SIG      EQU     $FBF4           ; 目印 ("7T")
 BASVEC_COLD     EQU     $FBF6           ; +0 = コールド入口 / +2 = 二次入口 (A = 0)
 ; --- 目印が無いときの飛び先 (参考書籍) ---
                 IFNDEF  STAGE_ALT_RAM
-FBASIC_HOT      EQU     $8684           ; ホットスタート (BREAK キー ON)
+BASIC_HOT       EQU     $8684           ; ホットスタート (BREAK キー ON)
                 ENDC
                 IFNDEF  STAGE_ALT_RAM
-FBASIC_COLD     EQU     $848B           ; コールドスタート (A = 0 で ROM モード)
+BASIC_COLD      EQU     $848B           ; コールドスタート (A = 0 で ROM モード)
                 ENDC
 
 ; --- FDC レジスタ (参考書籍。DP=$FD で直接ページ参照) ---
@@ -361,9 +360,9 @@ fw_ret:         RTS
 ; basic_vec — BASIC の飛び先を X に得る
 ;   入力 B = 0 (BREAK キー ON) / 2 (ディスク起動の不成立)。出力 X = 飛び先。
 ;   目印 "7T" があれば当方の BASIC ROM の起動ベクタの表を、無ければ本 ROM 内の表
-;   fbasic_ent (参考書籍に載るホットスタート / コールドスタート) を、同じ添字 B で引く。
+;   basic_ent (参考書籍に載るホットスタート / コールドスタート) を、同じ添字 B で引く。
 ;------------------------------------------------------------------------------
-basic_vec:      LDX     #fbasic_ent
+basic_vec:      LDX     #basic_ent
                 LDU     BASVEC_SIG
                 CMPU    #$3754          ; "7T"
                 BNE     bv_take
@@ -371,8 +370,8 @@ basic_vec:      LDX     #fbasic_ent
 bv_take:        ABX
                 LDX     ,X
                 RTS
-fbasic_ent:     FDB     FBASIC_HOT      ; +0: BREAK キー ON
-                FDB     FBASIC_COLD     ; +2: ディスク起動の不成立
+basic_ent:      FDB     BASIC_HOT       ; +0: BREAK キー ON
+                FDB     BASIC_COLD      ; +2: ディスク起動の不成立
 
 ;------------------------------------------------------------------------------
 ; spin_wait — READY 待ちの 1 回ぶんの待ち (SPIN_WAIT_N 回の空回し)。Y 破壊。

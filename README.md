@@ -2,7 +2,7 @@
 
 7032 Alternative ROMs は、FM-7 / FM77AV 系パソコンのエミュレーターで使う代替 ROM 一式です。機種ごとに選んで置く ROM 15 本を収録しており、この ROM 一式だけで BASIC が立ち上がります。参考書籍と動作観察を基に書き起こした独立実装です（[docs/LEGAL.md](docs/LEGAL.md) §6）。アセンブラソースを持つ ROM はすべて MIT ライセンス・ソース公開です。
 
-配布物のバージョンは **v1.0.1** です（[CHANGELOG.md](CHANGELOG.md)）。
+配布物のバージョンは **v1.0.2** です（[CHANGELOG.md](CHANGELOG.md)）。
 
 ## 収録物
 

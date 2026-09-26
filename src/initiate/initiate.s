@@ -20,7 +20,7 @@
 ;      (解除時にハードはサブモニタを FM-7 互換 Type-C へ切替える)
 ;      AV ブートイメージ側が BASIC の二次入口 / DOS (常駐ブートイメージ = FDC ディスク起動) を
 ;      最終分岐する。DOS モードで起動できる媒体が無いときはブザーを鳴らして止まる
-;      (参考書籍)。BASIC モードで媒体が無いときは F-BASIC へ。
+;      (参考書籍)。BASIC モードで媒体が無いときは BASIC ROM へ。
 ;
 ; 設計方針: 起動イメージは本リポジトリのソースからビルドしたものを用いる。
 ; 本コードが参照する固定アドレス・入口は参考書籍と動作観察に基づく (書誌・利用
@@ -131,13 +131,13 @@ mmr_loop:
 ;        BASIC → bas_image ($7800 = file offset $1800、boot_bas イメージ)
 ;        DOS   → boot_image ($7A00 = file offset $1A00、boot_init イメージ)
 ;      いずれも FDC サービスの実体を持つ 512 byte イメージ。
-;      BASIC 選択時は $FD0F を読取り F-BASIC ROM を有効化する。
+;      BASIC 選択時は $FD0F を読取り BASIC ROM を有効化する。
 ;   2. AV ブートイメージ (avboot_image、AVBOOT_ENT 基底 640 byte) を
 ;      AVBOOT_ENT から AVBOOT_LEN バイトの RAM へ転送する。転送先は当方の ROM 同士の取り決め
 ;      (docs/BUILD.md §5.5)。
 ;   3. スタックの上に積んだトランポリンからオーバレイを解除し AVBOOT_ENT へ
 ;      引渡す。AV ブートイメージ側が
-;      起動モードとメディア存在を判定し、$FE00 (ディスク起動) または F-BASIC
+;      起動モードとメディア存在を判定し、$FE00 (ディスク起動) または BASIC
 ;      (二次入口) へ最終分岐する。
 ;
 ; ★ 重要 (固定アドレス制約): オーバレイ解除 ($FD10 bit1=1) を行うと、解除した
@@ -172,7 +172,7 @@ boot_handoff:
                 LDU     #boot_image     ; DOS イメージ
                 BRA     bh_img_copy
 bh_basic_sel:
-                LDA     <FD_AUXMODE     ; $FD0F 読取 = F-BASIC ROM 有効化
+                LDA     <FD_AUXMODE     ; $FD0F 読取 = BASIC ROM 有効化
 bh_img_copy:
                 ; 選択イメージを $FE00-$FFFF へワード転送 (512 byte)。
                 ; ($FD93 bit0=1 で $FE00-$FFFF を RAM 化済みなので書込が届く)
@@ -230,7 +230,7 @@ nb_done:
 ; tramp_src — スタックの上へ積まれ RAM 上で実行される解除トランポリン。
 ;   スタック/DP を起動既定へ設定し、オーバレイ ($FD10 bit1=1) を解除してから
 ;   AV ブートイメージ (AVBOOT_ENT) へ JMP する。(解除副作用でサブモニタが Type-C へ
-;   切替わる。A=0 は F-BASIC 入口規約に合わせた既定値。)
+;   切替わる。A=0 は BASIC の入口の規約に合わせた既定値。)
 ;   引渡しは絶対アドレス形のジャンプで組む (トランポリンは RAM 上で走るため
 ;   相対分岐の基準が ROM 側と異なる)。
 ;------------------------------------------------------------------------------
@@ -243,7 +243,7 @@ tramp_src:
                 ENDC
                 LDA     #$02
                 STA     $FD10           ; オーバレイ解除 (RAM から実行)
-                CLRA                    ; A=0 (F-BASIC 入口規約)
+                CLRA                    ; A=0 (BASIC の入口の規約)
                 TFR     A,DP            ; DP=$00
                 IFDEF   INIT_AV1
                 JMP     BOOTIMG_ENT     ; 第 1 世代: resident boot ($FE00) 直行
@@ -1120,7 +1120,7 @@ voice_table:
 ;------------------------------------------------------------------------------
 ; bas_image — BASIC モード resident boot イメージ (512 byte)
 ;   boot_bas.rom ($FE00-$FFFF イメージ) を埋め込む。
-;   BASIC モード起動時に $FE00-$FFFF へ転送され、F-BASIC 起動 (ディスク自動起動
+;   BASIC モード起動時に $FE00-$FFFF へ転送され、BASIC 起動 (ディスク自動起動
 ;   対応) を担う。
 ;
 ;   $7800-$79FF (file offset $1800) に置き、$FE00 へ写して動かす。
@@ -1157,7 +1157,7 @@ boot_image:     INCLUDEBIN "../build/boot_init.rom"
 ;     (末尾パディングでゼロ埋め) となる。
 ;   独立ビルド avboot.bin を埋め込む。boot_handoff が AVBOOT_ENT から AVBOOT_LEN バイトへ転送し、
 ;   トランポリンが AVBOOT_ENT へ引渡す。イメージ内容は avboot.s 参照 (起動モード判定 +
-;   メディア存在プリフライト + F-BASIC フォールバック + FDC サービス表)。
+;   メディア存在プリフライト + BASIC フォールバック + FDC サービス表)。
 ;
 ;   $7C00-$7E7F (file offset $1C00) に配置する。
 ;   長さは $280。転送はラベル経由。

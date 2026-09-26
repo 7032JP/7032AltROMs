@@ -31,6 +31,10 @@
 ; 行い、B・R・G それぞれの 4 ビットが 0 でなければその色が点いているとみなして
 ; 色番号 (bit0 = B / bit1 = R / bit2 = G) を求める。
 ;
+; パターンを継続コマンド ($64) で分けて送る試験は INCLUDE の前に RT_CONT を定義する。
+; 応答種別 $FA のレコードは、継続フラグ (相対 1 の bit7) を 1 にして発行し、応答は
+; 受け取らない。続くレコードで $64 を送り、最後の $64 は応答種別 0 (継続フラグ 0) とする。
+;
 ; 根拠は参考書籍 (書誌は ../../../docs/LEGAL.md §6.1) と動作観察 (同 §6.2) で、
 ; 試験が見るのは入出力の範囲です。
 ;==============================================================================
@@ -313,6 +317,14 @@ rp_zero:
                 BLO     rp_zero
                 CLR     SH_ERR
                 CLR     SH_STAT
+        IFDEF RT_CONT
+                LDA     V_RMODE
+                CMPA    #$FA            ; 応答種別 $FA: 継続フラグを 1 にして発行する
+                BNE     rp_nocont
+                LDA     #$80
+                STA     SH_STAT
+rp_nocont:
+        ENDC
                 LDA     ,X+             ; コマンドコード
                 STA     V_CMD
                 LDB     V_PLEN
@@ -342,6 +354,10 @@ rp_send:
                 LBEQ    rp_err
                 CMPA    #$FC
                 LBEQ    rp_win2
+        IFDEF RT_CONT
+                CMPA    #$FA
+                LBEQ    rp_fin          ; 継続の途中: 応答は受け取らない
+        ENDC
         IFDEF RT_TYPEB
                 CMPA    #$FD
                 LBEQ    rp_pix
