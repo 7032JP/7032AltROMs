@@ -68,7 +68,7 @@ make
 | `make verify-fonts` | `build/font.bin` / `build/font16.bin` のハッシュを [`fonts/SHA256SUMS`](../fonts/SHA256SUMS) と照合し、非ゼロ符号位置の集合を [LEGAL.md](LEGAL.md) §8.1 の 2 表と照合する（`verify-release` から自動で呼ばれる） |
 | `make verify-kanji` | 同梱の入力 BDF とライセンス文のハッシュを [`fonts/SHA256SUMS`](../fonts/SHA256SUMS) と、`build/kanji.rom` / `build/kanji2.rom` のハッシュを [SHA256SUMS](../SHA256SUMS) と照合し、独自字形 107 符号位置の到達先の枠と内容を全数照合する（`verify-release` から自動で呼ばれる） |
 | `make deploy-roms` | 保守用。全再ビルドののち `build/` の産物を `roms/` へ複写し、`SHA256SUMS` を作り直す（`make` の後に `bash scripts/copy_roms.sh` を実行しても同じ） |
-| `make version` | 配布物のバージョン（`v1.0.4`）と 7T-BASIC のバージョン（`3.1`）を表示する |
+| `make version` | 配布物のバージョン（`v1.0.5`）と 7T-BASIC のバージョン（`3.1`）を表示する |
 | `make check-build-path` | 外部から与えた `BUILD` の値が削除してよいパスかを検査する（`make clean` から自動で呼ばれる） |
 | `make check-build-guard` | 外部入力 `BUILD` の安全ガードを負例で検査する（ROM は作らない。検査の詳細は Makefile のコメントに記載） |
 | `make clean` | `build/` をまるごと削除する |
