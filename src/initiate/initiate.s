@@ -105,20 +105,36 @@ mmr_loop:
                 LDA     #$01
                 STA     <FD_MODE93
 
+                ;   第 1 世代 (INIT_AV1) は音源 → アナログパレットの順に初期化する。
+                IFDEF   INIT_AV1
+                ; --- 段3: サウンドサブシステム初期化 ---
+                ;   PIA を整えた後に行う (ストローブ線の向きが定まってから鳴らす)。
+                LBSR    init_sound
+
+                ; --- 段4: アナログパレット LUT 初期化 ---
+                LBSR    init_palette
+                ELSE
                 ; --- 段3: アナログパレット LUT 初期化 ---
                 LBSR    init_palette
 
                 ; --- 段4: サウンドサブシステム初期化 ---
                 ;   PIA を整えた後に行う (ストローブ線の向きが定まってから鳴らす)。
                 LBSR    init_sound
+                ENDC
 
                 ; --- 段5: ブートイメージを展開して起動 ---
                 ;   起動モード ($FD04 bit1 / $FD0B bit0) で BASIC/DOS ブートイメージを
                 ;   選択して $FE00 へ転送し、さらに AV ブートイメージを AVBOOT_ENT へ転送してから、
                 ;   スタックの上に積んだトランポリン経由でオーバレイを解除し
                 ;   AVBOOT_ENT へ引渡す。
+                IFNDEF  INIT_AV1
                 LBSR    boot_handoff
                 ; ここには戻らない
+                ELSE
+                ; 第 1 世代: 直後の boot_handoff へそのまま入る (戻り先を積まない)。
+                ; S = STACK_TOP ($FC80) のままディセーブル・ルーチンの 7 バイトを積むので、
+                ; 積んだ先は $FC79-$FC7F になる。
+                ENDC
 
 ;------------------------------------------------------------------------------
 ; boot_handoff — ブートイメージ展開 → オーバレイ解除 → JMP AVBOOT_ENT
@@ -127,6 +143,7 @@ mmr_loop:
 ;        DOS = ($FD04 bit1 = 1) かつ ($FD0B bit0 = 1)
 ;        ($FD04 bit1=0 は BREAK 押下リセット = BASIC 強制。$FD0B bit0 は
 ;         起動モード設定 0=BASIC / 1=DOS)
+;        ただし INIT_AV1 は DOS = ($FD0B bit0 = 1) だけで決める ($FD04 は見ない)
 ;      に従い resident boot イメージを選択して $FE00-$FFFF へ転送する:
 ;        BASIC → bas_image ($7800 = file offset $1800、boot_bas イメージ)
 ;        DOS   → boot_image ($7A00 = file offset $1A00、boot_init イメージ)
@@ -163,9 +180,13 @@ boot_handoff:
                 LBSR    init_display
                 ; --- 起動モード判定 → resident boot イメージ選択 ---
                 LDU     #bas_image      ; 既定 = BASIC イメージ
+                ;   第 1 世代 (INIT_AV1) はモード選択スイッチ ($FD0B bit0) だけで選ぶ。
+                ;   BREAK キー ($FD04 bit1) は見ない。
+                IFNDEF  INIT_AV1
                 LDA     <FD_BOOTJP      ; $FD04
                 BITA    #$02
                 BEQ     bh_basic_sel    ; bit1=0 (BREAK) → BASIC
+                ENDC
                 LDA     <FD_BOOTDET     ; $FD0B
                 ANDA    #$01
                 BEQ     bh_basic_sel    ; bit0=0 → BASIC
@@ -186,6 +207,7 @@ bh_copy:
                 ;   置き場所を固定アドレスにしない。末尾から 1 バイトずつ S の上へ積み、
                 ;   積み終えた先頭 (= S) へ飛ぶ。トランポリンは先頭で S を STACK_TOP へ
                 ;   戻し、以後 JMP まで push を行わないので、積んだコードは壊れない。
+                ;   (INIT_AV1 のトランポリンは S を戻さないが、push も行わない。)
                 LDU     #tramp_end
 bh_tpush:
                 LDA     ,-U
@@ -202,6 +224,10 @@ bh_tpush:
                 ; 第 1 世代: AV ブートイメージ機構を持たない。転送は行わず、そのまま
                 ; トランポリン (スタック上の RAM) へ進んで resident boot ($FE00) を
                 ; 起動する (= 複写した起動用 ROM イメージをその場で実行する世代)。
+                ; ディセーブル・ルーチンは A の値 (2) をそのまま $FD10 と $FD93 へ書くので、
+                ; 飛ぶ直前に A = 2 にする。リセットベクタ ($FFFE = $FE00) は複写した
+                ; イメージが持つ。
+                LDA     #$02
                 JMP     ,S
                 ELSE
                 BRA     nb_copy
@@ -235,6 +261,15 @@ nb_done:
 ;   相対分岐の基準が ROM 側と異なる)。
 ;------------------------------------------------------------------------------
 tramp_src:
+                IFDEF   INIT_AV1
+                ; 第 1 世代: 7 バイトのディセーブル・ルーチン。入るときは A = 2、DP = $FD。
+                ; $FD10 = 2 (bit1 = 1: イニシエート ROM を外す) → $FD93 = 2 (bit0 = 0:
+                ; $FE00-$FFFF を読出し専用に戻す) → resident boot ($FE00) へ。
+                ; resident boot は入口で割込みのマスク・S・DP を自分で設定する。
+                STA     <FD_OVLCTL      ; $FD10 = 2
+                STA     <FD_MODE93      ; $FD93 = 2
+                JMP     BOOTIMG_ENT     ; resident boot ($FE00) へ
+                ELSE
                 LDS     #STACK_TOP      ; スタック既定 ($FC80)
                 IFNDEF  STAGE_ALT_RAM
                 LDA     <FD_MODE93
@@ -245,9 +280,6 @@ tramp_src:
                 STA     $FD10           ; オーバレイ解除 (RAM から実行)
                 CLRA                    ; A=0 (BASIC の入口の規約)
                 TFR     A,DP            ; DP=$00
-                IFDEF   INIT_AV1
-                JMP     BOOTIMG_ENT     ; 第 1 世代: resident boot ($FE00) 直行
-                ELSE
                 JMP     AVBOOT_ENT     ; AV ブートイメージへ
                 ENDC
 tramp_end:

@@ -23,8 +23,10 @@
 ;   - 音程: f = f_clock/(16*D), f_clock=1.2288MHz (参考書籍 SOUND の周波数式)
 ;     より D = 76800/f。O4 の 12 音を表に持ち、オクターブ差はシフトで求める。
 ;     O4 A = 440Hz → D = 175。
-;   - ミキサ R7 は演奏開始/停止時に $F8 (トーン 3 声有効・ノイズ無効・音量 0
+;   - ミキサ R7 は演奏開始/停止時に $B8 (トーン 3 声有効・ノイズ無効・音量 0
 ;     で無音) を設定し、演奏中は音量レジスタ (R8-R10) のみで発音を制御する。
+;     上位 2 ビット (入出力ポートの向き) は ビット 7 = 1・ビット 6 = 0 のまま
+;     変えない (参考書籍)。
 ;   - 中断 (参考書籍): BREAK / 入力待ちの CTRL-X・CTRL-C /
 ;     オーディオカセット関係のコマンド (MOTOR を除く) / RUN / Abort 表示。
 ;     この 5 つの入口にだけ play_stop をフックし、PSG を初期状態へ戻す。
@@ -72,7 +74,7 @@ impl_play:
                 CMPA    #':'
                 BEQ     ipl_ret
                 ; ミキサ初期化: トーン 3 声有効 (音量 0 のため未発音)
-                LDD     #$07F8                  ; レジスタ 7 = ミキサ
+                LDD     #$07B8                  ; レジスタ 7 = ミキサ
                 JSR     impl_psg_write
                 CLR     >p_voice
 ipl_vloop:
@@ -775,7 +777,7 @@ pst_lp:
                 DECB
                 BNE     pst_lp
                 BSR     play_silence
-                LDD     #$07F8                  ; レジスタ 7 = ミキサ
+                LDD     #$07B8                  ; レジスタ 7 = ミキサ
                 JSR     impl_psg_write
                 JSR     time_hw_sync    ; 演奏停止 → 刻みが要らなくなれば所有を返す
                 PULS    CC,A,B,X,PC

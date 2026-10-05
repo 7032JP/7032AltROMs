@@ -173,7 +173,7 @@ impl_beep_snd:
                 LDA     #1
                 CLRB                    ; (短縮)
                 BSR     impl_psg_write
-                LDD     #$07F8          ; レジスタ 7 = ミキサ
+                LDD     #$07B8          ; レジスタ 7 = ミキサ
                 BSR     impl_psg_write
                 LDD     #$080F          ; レジスタ 8 = 音量
                 BSR     impl_psg_write
@@ -184,7 +184,7 @@ ibs_wait:
                 LDA     #8
                 CLRB                    ; (短縮)
                 BSR     impl_psg_write
-                LDD     #$07F8          ; レジスタ 7 = ミキサ
+                LDD     #$07B8          ; レジスタ 7 = ミキサ
                 BRA     impl_psg_write ; (末尾呼び)
 
 ;==============================================================================

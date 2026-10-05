@@ -891,7 +891,7 @@ impl_skipf:
 isk_hdr:
                 LDU     #cmt_hdr_buf
                 JSR     cmt_read_hdr
-                BCS     isk_ioerr       ; 検査和エラー / テープ終端
+                BCS     isk_ioerr       ; 検査和エラー
                 LDA     cmt_blk_type
                 BNE     isk_hdr         ; ヘッダブロックでない → 次を読む
                 JSR     cmt_name_chk
@@ -914,7 +914,7 @@ isk_ioerr:
 ;==============================================================================
 ; files_cas — FILES "CAS0:"
 ;   テープを送りながらヘッダブロックを拾い、`ファイル名 種類 形式` を 1 行
-;   ずつ並べる。終了は BREAK キーか、テープの終わり。
+;   ずつ並べる。終了は BREAK キー。
 ;   種類は 0 = BASIC プログラム / 1 = データ / 2 = 機械語、形式は
 ;   A = アスキー / B = バイナリ。
 ;==============================================================================
@@ -929,11 +929,7 @@ ifc_lp:
                 BNE     ifc_end
                 LDU     #cmt_hdr_buf
                 JSR     cmt_read_hdr
-                BCC     ifc_have
-                TSTB
-                BNE     ifc_end         ; テープ終端 → 一覧の終わり
-                BRA     ifc_lp          ; 検査和エラー → 読み続ける
-ifc_have:
+                BCS     ifc_lp          ; 検査和エラー → 読み続ける
                 LDA     cmt_blk_type
                 BNE     ifc_lp          ; ヘッダブロックでない
                 ; ヘッダの中身を 1 行に出す部分は、テープの読込み (LOAD /

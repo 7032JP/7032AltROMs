@@ -419,18 +419,13 @@ impl_merge:
                 PSHS    X                       ; ディスパッチャ復帰用 X
                 ; モーター ON
                 JSR     cmt_motor_on    ; モータ ON (控えも更新)
-                ; ヘッダブロック待ち (ファイル名照合)。EOT で確実に脱出する
-                ; (BCS で無条件に再試行すると、テープ終端の無音固着で無限
-                ;  ループになる。cmt_read_block は失敗の種別を B で返し、
-                ;  B≠0 は EOT、B=0 は CRC エラー=再試行)。
+                ; ヘッダブロック待ち (ファイル名照合)。チェックサムの誤りは読み直す。
+                ; 本文のチェックサムの誤りは LOAD と同じ行取込 (il_get_byte) が
+                ; Device I/O Error (53) にする。
 img_header:
                 LDU     #cmt_hdr_buf
                 JSR     cmt_read_block
-                BCC     imh_have
-                TSTB                            ; EOT (B≠0) か CRC エラー (B=0) か
-                BNE     img_done                ; EOT → モータ OFF で復帰
-                BRA     img_header              ; CRC エラー → 再試行
-imh_have:
+                BCS     img_header              ; チェックサムの誤り → 読み直す
                 LDA     cmt_blk_type
                 BNE     img_header              ; type≠0 → ヘッダでない
                 JSR     cmt_name_chk            ; 名前照合 (指定なしは無条件一致)
@@ -766,7 +761,7 @@ impl_open:
                 BSR     fio_dev         ; B = LOGPHY への記録値 (受け持たない綴りは 60)
                 PULS    U
                 TST     ,U
-                BNE     fio_e52         ; 既に開いている → File Already Open
+                LBNE    fio_e52         ; 既に開いている → File Already Open (区画末の空きを跨ぐので長い形)
                 STB     ,U
                 RTS
 
@@ -830,6 +825,30 @@ fio_dev:
 fdv_kybd:
                 LDB     #$60            ; KYBD: = 物理機番 0 + 入出力
                 RTS
+
+; cls_send — CLS の消去 ($0D) を送る。Type-B の動作中は Type-B の引数の並びに組み直す。
+;   $FD12 は FM77AV ではビット 6 = 1 が 320 ドット (Type-B の動作中)、FM-7 では $FF と読める。
+;   $FF を除いたうえでビット 6 = 1 なら、相対 4〜6 = 背景色の B・R・G ($00 / $FF)、
+;   相対 7 = 文字色にする。それ以外 (FM-7、FM77AV の Type-C) は送るバイトを変えない。
+;   入力: A = 文字色 (impl_cls が相対 5 へ置いた値)。破壊: A,B,X
+cls_send:
+                LDB     >$FD12
+                INCB                    ; $FF (FM-7) → 0
+                BEQ     cls_go
+                BITB    #$40            ; ビット 6 (320 ドット)。INCB でビット 6 は変わらない
+                BEQ     cls_go
+                STA     SUBCMD_P5       ; 相対 7 = 文字色
+                LDA     cur_bg_color
+                LDX     #SUBCMD_P2
+cls_bgr:
+                CLRB
+                LSRA                    ; C = 色のビット (B・R・G の順)
+                SBCB    #0              ; B = $FF / $00
+                STB     ,X+
+                CMPX    #SUBCMD_P5
+                BNE     cls_bgr
+cls_go:
+                JMP     impl_sub_send_cmd
 
                 IFNDEF  STAGE_ALT_RAM
                 ZMB     $DAEF-*

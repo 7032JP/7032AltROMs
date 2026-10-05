@@ -190,16 +190,19 @@ tnl_fin:
 ;     +2 以降   = リクエスト番号ごとの引数/結果 (参考書籍)
 ;   出力: キャリー = エラー有無 (参考書籍。1 = エラー有り、0 = 無し)。
 ;   呼び出し側は B をカウンタに、X を RCB 参照に使ったまま呼ぶため、
-;   全レジスタを保存する (A は復帰時に元値へ戻す)。
+;   全レジスタを保存する (A は復帰時に元値へ戻す)。CC の E・F・I は呼び出しの
+;   前後で変えない (参考書籍)。キャリー以外のフラグも呼ぶ前の値に戻る。
 ;
-;   組立て: 入口で全レジスタ (A,B,X,Y,U,DP) を積み、番号の表 (bios_tbl) を引いて
-;   番号ごとの処理へ JSR する。処理は X = RCB で入り、RCB+1 (RCBSTA) とキャリーを
-;   整えて RTS する (共通の出口は bios_rcb_ret。X を壊したら 5,S から取り直す)。
-;   戻ったら枠を降ろし、処理が立てた FIRQ のマスクを解いて呼び手へ返る
-;   (キャリーは処理が置いたまま)。表の外の番号は 0 の欄 (Device Unavailable)。
+;   組立て: 入口で CC と全レジスタ (CC,A,B,X,Y,U,DP) を積み、番号の表 (bios_tbl) を
+;   引いて番号ごとの処理へ JSR する。処理は X = RCB で入り、RCB+1 (RCBSTA) と
+;   キャリーを整えて RTS する (共通の出口は bios_rcb_ret。X を壊したら 6,S から
+;   取り直す)。戻ったら、積んだ CC のビット 0 だけを処理のキャリーに替え、CC ごと
+;   枠を降ろして呼び手へ返る。処理がサブシステムとの受け渡しの間に立てた FIRQ の
+;   マスクも、ここで呼び手の値へ戻る (1 命令で CC と PC を降ろすので、戻る前に
+;   割込みが挟まる隙間は無い)。表の外の番号は 0 の欄 (Device Unavailable)。
 ;------------------------------------------------------------------------------
 ml_io_dispatch:
-                PSHS    A,B,X,Y,U,DP    ; 呼び出し側レジスタを保存 (X は 5,S)
+                PSHS    CC,A,B,X,Y,U,DP ; 呼び出し側の CC とレジスタを保存 (X は 6,S)
                 LDA     ,X              ; A = リクエスト番号 (RQNO)
                 CMPA    #24
                 BLS     mld_ok
@@ -207,10 +210,12 @@ ml_io_dispatch:
 mld_ok:
                 ASLA
                 LDU     #bios_tbl
-                JSR     [A,U]           ; 番号ごとの処理 (X = RCB)
-                PULS    A,B,X,Y,U,DP
-                ANDCC   #$BF            ; FIRQ のマスクを解く (キャリーは処理のまま)
-                RTS
+                JSR     [A,U]           ; 番号ごとの処理 (X = RCB)。キャリー = 誤りの有無
+                LDA     ,S              ; 積んだ CC (LDA / ANDA はキャリーを変えない)
+                ANDA    #$FE
+                ADCA    #0              ; ビット 0 だけを処理のキャリーに替える
+                STA     ,S
+                PULS    CC,A,B,X,Y,U,DP,PC ; E・F・I は呼ぶ前の値に戻る (参考書籍)
 bios_tbl:
                 FDB     dmd_unavail     ;  0 リザーブ
                 FDB     cfd_cmd1        ;  1 MOTOR
@@ -272,7 +277,7 @@ cfd_cmd3:
                 BCS     cfd_c3s
                 CLRB
 cfd_c3s:
-                LDX     5,S             ; 退避した X (= RCB 先頭)
+                LDX     6,S             ; 退避した X (= RCB 先頭)
                 STA     2,X             ; CRWDAT ← リードデータ
                 JSR     time_resume     ; (B は保存される)
                 JMP     bios_rcb_ret
@@ -304,7 +309,7 @@ ckj_lp:
                 BNE     ckj_lp
 cfd_ok:
                 ; 正常終了の共通の出口 (BIINIT もここ)。X を取り直して RCBSTA = 0。
-                LDX     5,S
+                LDX     6,S
                 CLRB
                 JMP     bios_rcb_ret
 cfd_keyin:
@@ -328,8 +333,10 @@ cfd_input:
                 ; 変更フィールドを持ち帰る (参考書籍)。
                 ; 持ち帰る形 (参考書籍): RCBDBA+0 = 終了コード (応答の K)、+1 = $12、
                 ; +2 = X、+3 = Y、+4〜 = テキスト (応答の相対 5 から N バイト)。
-                ; RCBLNH = 転送した N (0 = 変更フィールドなし)。データバッファ長
-                ; (RCBBMH、下位 8 ビット) を越えては転送しない。
+                ; RCBLNH = 転送した N (終了コードを除く。0 = 変更フィールドなし)。
+                ; データバッファ長 (RCBBMH、16 ビット) を越えては書かない (参考書籍):
+                ; 終了コードの 1 バイトを含めて RCBBMH バイト以内に収め、N は
+                ; RCBBMH − 1 までに切る。RCBBMH = 0 なら 1 バイトも書かない。
                 ; 共有 RAM に入り切らない長いフィールドの継続 ($64) は行わない
                 ; (テキストは 120 バイトまで)。
                 JSR     ml_io_con_out   ; 文字列の表示 (文字数 0 なら何もしない)
@@ -339,18 +346,19 @@ cfd_inputc:
                 LDA     #$05            ; GETC
                 BSR     bios_sub_cmd
                 LDU     2,X             ; U = RCBDBA
+                LDB     SUBCMD_BASE+4   ; N = $12・X・Y・テキストのバイト数
+                CLRA
+                CMPD    6,X             ; N < RCBBMH なら終了コードと合わせて収まる
+                BLO     cin_k
+                LDD     6,X             ; 収まらない → RCBBMH − 1 バイトまで (A = 0)
+                BEQ     cin_len         ; RCBBMH = 0 → 終了コードも書かない
+                DECB
+cin_k:
                 LDA     SUBCMD_BASE+3   ; K = 終了キー (0 RETURN / 1 CTRL+C, CTRL+X / 2 CLS)
                 STA     ,U+
-                LDB     SUBCMD_BASE+4   ; N = $12・X・Y・テキストのバイト数
-                TST     6,X
-                BNE     cin_len         ; RCBBMH ≧ 256 → 制限なし
-                CMPB    7,X
-                BLS     cin_len
-                LDB     7,X             ; データバッファ長まで
-cin_len:
                 CLRA
-                STD     4,X             ; RCBLNH = 転送するバイト数
-                TSTB
+cin_len:
+                STD     4,X             ; RCBLNH = 転送するバイト数 (Z = 0 バイト)
                 BEQ     bios_sub_done
                 LDY     #SUBCMD_BASE+5
 cin_cp:
@@ -360,10 +368,10 @@ cin_cp:
                 BNE     cin_cp
 bios_sub_done:
                 ; 応答を読み終えた後の共通の後始末: ATN を立てて RUN し、サブを待機
-                ; ループの先頭へ戻して BUSY を解放させる (ssc_atn_run。X を壊す)。
-                PSHS    X
-                JSR     ssc_atn_run
-                JMP     fco_bwd         ; X を戻し、RCBSTA = 0・キャリー = 0 で復帰
+                ; ループの先頭へ戻して BUSY を解放させる。手順は OUTPUT の完了
+                ; (fco_done: 共有 RAM の相対 0 のエラーコードを控え、ssc_atn_run の後に
+                ; RCBSTA とキャリーへ写して復帰) と同じなので、そこへ飛ぶ。
+                JMP     fco_done
 bios_sub_cmd:
                 ; A = サブシステムへ発行するコマンド (相対 3 は 0)。直前の完了を待って
                 ; HALT し、共有 RAM へ置いて RUN、完了 (BUSY → 0) を待って再び HALT
@@ -393,38 +401,40 @@ bios_sub_cmd:
 ;   (参考書籍)。
 ;
 ;   入力: X = 制御ブロック先頭 (cb[0]=$10 / $11, cb[2:3]=コマンドイメージポインタ,
-;         cb[5]=長さ 1..$80。長さ 0 / 範囲外は RCB エラー (1))
+;         cb[4:5]=RCBLNH = 長さ (16 ビット) 1〜128 (参考書籍)。0 と 129 以上は
+;         RCB エラー (1))
 ;   出力: キャリー=0 成功。全レジスタ保存 (枠は入口が積む)。
 ;------------------------------------------------------------------------------
 ml_io_gfx_send:
                 LDU     2,X             ; U = cb[2:3] = コマンドイメージポインタ
-                LDB     5,X             ; B = cb[5] = イメージの長さ (可変, 1..$80)
-                BEQ     fgs_skip        ; 長さ0 は RCB エラー
-                CMPB    #$80
-                BHI     fgs_skip        ; 範囲外 (>128) も RCB エラー
+                LDD     4,X             ; D = RCBLNH = イメージの長さ (16 ビット)
+                BEQ     fgs_skip        ; 0 は RCB エラー
+                CMPD    #$80
+                BHI     fgs_skip        ; 129 以上も RCB エラー (以下 B = 長さ)
                 ; --- サブ CPU を HALT (完了同期はサブシステムの手順どおり
                 ;     「次コマンド発行時の HALT 冒頭で直前コマンドの BUSY 解放を
                 ;     待つ」方式。gfx_halt が先頭で $FD05 bit7=0 を確認してから
                 ;     HALT 要求する。ブロック転送コマンド ($10) は結果を持たない
                 ;     ため、送出後は完了を待たずに復帰する fire-and-forget) ---
-                PSHS    B               ; 長さ退避 (gfx_halt が B を壊すため)
-                BSR     gfx_halt
-                ; --- 共有 RAM の現況下位 7bit をイメージ[1] に引き継ぐ (ATN 整合) ---
-                LDA     1,U
-                ANDA    #$80
-                STA     1,U
-                LDA     SUBCMD_BASE+1   ; $FC81 現況
-                ANDA    #$7F
-                ORA     1,U
-                STA     1,U
-                ; --- 呼出側提供 cb[5] バイト → 共有 RAM ($FC80-) ---
+                BSR     gfx_halt        ; (B = 長さは gfx_halt が保つ)
+                ; --- 共有 RAM の相対 1 の下位 7 ビット (サブシステムが置く状態) を控える ---
                 LDY     #SUBCMD_BASE
-                PULS    B               ; 長さ復元
+                LDA     1,Y             ; $FC81 現況
+                ANDA    #$7F
+                PSHS    A
+                ; --- 呼び手のデータバッファ (長さぶん) をそのまま共有 RAM ($FC80-) へ写す。
+                ;     呼び手のバッファは書き換えない (参考書籍) ---
 fgs_cp:
                 LDA     ,U+
                 STA     ,Y+
                 DECB
                 BNE     fgs_cp
+                ; --- 写した相対 1 は bit7 (継続フラグ) だけを呼び手の値とし、下位 7 ビットは
+                ;     控えた現況に戻す (サブシステムが置いた状態を消さない) ---
+                LDA     SUBCMD_BASE+1
+                ANDA    #$80
+                ORA     ,S+
+                STA     SUBCMD_BASE+1
                 ; --- RUN させる ---
                 CLR     PORT_SUBCPU
                 LDA     ,X
@@ -448,7 +458,8 @@ fsi_cp:
                 BNE     fsi_cp
                 BRA     bios_sub_done
 fgs_skip:
-                JMP     fco_skip        ; RCB エラー (1)
+                LDB     #1              ; RCB エラー (参考書籍)。キャリー = 1 で復帰
+                JMP     bios_rcb_ret
 
 ; gfx_halt: サブシステムの手順に沿う HALT。まず直前コマンドの完了
 ;   ($FD05 bit7=0) を待ち、続いて HALT 要求し、確立 (bit7=1) を有界回数だけ
@@ -471,6 +482,12 @@ gfxh_est:
 gfxh_ret:
                 PULS    B,PC
 
+; fco_bwd_cb: 完了を待たない復帰 (SUBOUT と文字数 0 の OUTPUT)。RCBSTA = 0。
+;   ml_io_con_out の短い分岐が届くよう、ここ (手前) に置く。
+fco_bwd_cb:
+                CLR     1,X             ; cb[1] = 0 (成功結果)。CLR はキャリーも 0 にする
+                RTS
+
 ;------------------------------------------------------------------------------
 ; ml_io_con_out: 機械語コンソール出力命令 ($14) の実体。
 ;
@@ -488,16 +505,30 @@ gfxh_ret:
 ;   上書きされ文字が失われる。待ちはすべて上限付き (サブシステムが応答
 ;   しなくても止まらない)。
 ;
-;   入力: X = 制御ブロック先頭 (cb[0]=$14, cb[2:3]=文字列, cb[5]=長さ)
-;   出力: キャリー=0 成功, cb[1]=0 (長さ 0/範囲外は cb[1]=1 = RCB エラー、
-;         キャリー=1)。X は保つ (INPUT からも呼ぶ)。全レジスタ保存 (枠は入口が積む)。
+;   長さ: RCBLNH は 16 ビットの文字数で、上限は無い (参考書籍)。共有 RAM の
+;   パラメータ域 (120 バイト) に入り切らない文字列は、120 文字ずつの $03 に分けて
+;   順に送る (fco_one を回ごとに呼ぶ)。文字数 0 は何も出さずに正常終了する。
+;   1 回ぶんの完了待ちが上限に達したときは、その回を打ち切って次の回へ進む。
+;
+;   入力: X = 制御ブロック先頭 (cb[0]=$14, cb[2:3]=文字列, cb[4:5]=文字数)
+;   出力: キャリー=0, cb[1]=0。X は保つ (INPUT からも呼ぶ)。
+;         全レジスタ保存 (枠は入口が積む)。
 ;------------------------------------------------------------------------------
 ml_io_con_out:
-                LDB     5,X             ; B = cb[5] = 文字数
-                BEQ    fco_skip        ; 長さ 0 は RCB エラー
-                CMPB    #$78            ; 共有 RAM パラメータ域 (120B) 上限
-                BHI    fco_skip        ; 範囲外も RCB エラー
+                LDD     4,X             ; D = cb[4:5] = 文字数 (16 ビット)
+                BEQ     fco_bwd_cb      ; 0 は何も出さずに正常終了
                 LDU     2,X             ; U = cb[2:3] = 文字列ポインタ
+fco_next:
+                SUBD    #$78            ; 1 回に送るのは共有 RAM パラメータ域 (120B) まで
+                BLS     fco_last        ; 残り 120 以下 → 最後の回
+                PSHS    D               ; 120 を越えた残り
+                LDB     #$78
+                BSR     fco_one         ; 120 文字を送る (U は進む)
+                PULS    D
+                BRA     fco_next
+fco_last:
+                ADDB    #$78            ; B = 最後の回の文字数 (1〜120)
+fco_one:
                 ORCC    #$40            ; FIRQ マスク (臨界区間の ATN 割込を抑止)
                 PSHS    B               ; 文字数退避
                 ; --- 直前コマンドの消化を有界に待つ ---
@@ -550,22 +581,23 @@ fco_dly:
                 CLR     PORT_SUBCPU     ; まだ → RUN 再試行
                 DECB
                 BNE     fco_poll
-                PSHS    X               ; 上限枯渇 → 打ち切り
+                PSHS    B,X             ; 上限枯渇 → 打ち切り (B = 0 = RCBSTA は正常)
                 JSR     ssc_run_wait    ; 打ち切り時は ATN を立てずに RUN (共通)
                 BRA     fco_bwd
 fco_done:
+                ; --- サブシステムエラーを控える (HALT の下) ---
+                ;   サブシステムは共有 RAM の相対 0 にエラーコード (0 = 正常、
+                ;   60〜70 = サブシステムエラー) を置く。最上位ビットは READY REQ
+                ;   なので下位 7 ビットを取る。BIOS はこれを RCBSTA に返し、
+                ;   エラーのときキャリーを 1 にする (参考書籍)。
+                LDB     SUBCMD_BASE     ; $FC80 = 相対 0
+                ANDB    #$7F
                 ; --- サブを待機ループ先頭へ戻し BUSY を解放させる ---
-                PSHS    X
-                JSR     ssc_atn_run     ; ATN を立てて RUN → BUSY 解放待ち (共通。X を壊す)
+                PSHS    B,X
+                JSR     ssc_atn_run     ; ATN を立てて RUN → BUSY 解放待ち (共通。X を壊す。B は保つ)
 fco_bwd:
-                PULS    X               ; X = 制御ブロック先頭
-fco_bwd_cb:
-                CLR     1,X             ; cb[1] = 0 (成功結果)
-                ANDCC   #$FE            ; キャリー=0
-                RTS
-fco_skip:
-                LDB     #1              ; RCB エラー (参考書籍)。キャリー = 1 で復帰
-                JMP     bios_rcb_ret
+                PULS    B,X             ; B = エラーコード、X = 制御ブロック先頭
+                JMP     bios_rcb_ret    ; RCBSTA = B、キャリー = (B ≠ 0)
 
 ; LOG(x): 自然対数 (単精度)。
 ;   x = m * 2^e (m = 仮数, 0.7071 <= m < 1.4142 に正規化) と分解し、

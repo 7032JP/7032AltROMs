@@ -1165,7 +1165,7 @@ impl_cls_ext:
                 STA     SUBCMD_P2               ; BC = 消去後の背景色
                 JSR     eff_txt_col             ; FC = 消去後の文字色 (単色表示なら緑)
                 STA     SUBCMD_P3
-                JMP     impl_sub_send_cmd
+                JMP     cls_send        ; Type-B の動作中は引数の並びを組み直して送る
 
 ;------------------------------------------------------------------------------
 ; iget_colors: GET@ (ドットパターン形式) の色指定を組み立てる。

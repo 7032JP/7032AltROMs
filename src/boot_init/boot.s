@@ -8,15 +8,14 @@
 ; ディスク BIOS ($FE02 / $FE05 / $FE08) と失敗時の扱いは FM-7 の DOS モード起動 ROM
 ; (boot_dos) と同じで、拡張の検出 ($FD05 bit0 EXTDET) は持たない。
 ;
-; 出典: 参考書籍 (docs/LEGAL.md §6.1 の 4 点) と動作観察 (同 §6.2)。
+; 出典: 参考書籍と動作観察 (docs/LEGAL.md §6.1・§6.2)。
 ;
 ; 本イメージは BREAK キー・ディスク有無の判定を持たず、無条件に
 ; ディスク起動を行う。
 ;
-; ★ IPL の置き場 (動作観察。変えてはならない): FM77AV では、起動モードに依らず
-;   トラック 0 セクタ 1 を $0100 へ読み、$0100 から始める。IPL は $0100〜$02FF の
-;   絶対アドレスを読み書きしてよく、$0100 以外へ置くとその参照先が食い違う。
-;   $0300 を使うのは FM-7 の DOS モードの起動 ROM (boot_dos) だけである。
+; ★ IPL の置き場 (動作観察): FM77AV では、起動モードに依らずトラック 0 セクタ 1 を
+;   $0100 へ読み、$0100 から始める。$0300 を使うのは FM-7 の DOS モードの起動 ROM
+;   (boot_dos) だけである。
 ;
 ; 本イメージは DOS モードでのみ $FE00 へ転送される (BASIC モードで転送されるのは
 ; boot_bas)。BASIC ROM ($8000-$FBFF) を現す ROM/RAM 切換は $FD0F の読出であり、
@@ -26,7 +25,7 @@
 ;
 ; 動作:
 ;   $FE00 → 割込マスク、S・DP 設定 → ドライブ 0 のモータ ON → READY になるまで RESTOR を
-;   出し直す (上限約 2 秒) → RESTOR → トラック 0 セクタ 1 を $0100 へ
+;   出し直す (上限約 2 秒) → RESTOR → 20 ms 以上待つ → トラック 0 セクタ 1 を $0100 へ
 ;   DREAD → 成功なら Y = $0500・DP = 0 で $0100 へ。読めなければ RESTOR から
 ;   READ_TRIES 回までやり直し、それでも読めなければ $FD03 に連続
 ;   ブザー (bit7 = 連続ブザー、bit0 = スピーカ) を書いて止まる。
@@ -133,12 +132,15 @@ rb_ready:       LBSR    spin_wait       ; 少し待つ
                 BEQ     rb_load         ; 正常 → READY
                 DEC     ,S              ; 残り回数
                 BNE     rb_ready
-                ; --- RESTOR → トラック 0 のセクタ 1 を $0100 へ DREAD。
+                ; --- RESTOR → 20 ms 以上待つ → トラック 0 のセクタ 1 を $0100 へ DREAD。
                 ;     エラーなら READ_TRIES 回まで ---
 rb_load:        LDB     #READ_TRIES
                 STB     ,S              ; 同じ枠を読込の残り回数に使う
 rb_retry:       LDX     #restor_rcb
                 JSR     fdc_rw          ; RESTOR
+                ;   RESTOR の後、20 ms 以上待ってから読む (ヘッドを落ち着かせる)。
+                ;   spin_wait は 2 MHz で約 49 ms。
+                LBSR    spin_wait       ; 20 ms 以上の待ち (Y 破壊)
                 LDX     #dread_rcb
                 JSR     fdc_rw          ; DREAD セクタ 1 → $0100 (A = エラー番号、Z は A に従う)
                 BEQ     rb_ok

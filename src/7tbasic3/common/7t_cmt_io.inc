@@ -24,8 +24,7 @@
 ;==============================================================================
 
 ;   (レベルが HIGH / LOW になるまで待つだけの補助はここには置かない。立ち上がり
-;    待ちと計数は、テープ毎の校正を一手に行う cmt_measure_high が受け持つ。
-;    当区画の予算は読取待ちの中断キー検査へ充ててある。)
+;    待ちと計数は、テープ毎の校正を一手に行う cmt_measure_high が受け持つ。)
 
 ;------------------------------------------------------------------------------
 ; cmt_delay_x: X * 12サイクルのディレイ (汎用ディレイ)
@@ -162,7 +161,6 @@ cmh_count:
                 RORB                    ; D = X / 8
                 LEAX    D,X             ; X = 1.625 X
 cmh_fin:
-                ANDCC   #$FE            ; キャリー=0 (成功)。EOT 伝播判定用に明示
                 PULS    B,DP,PC         ; 3 回連続 LOW = 真の立ち下がり。X = 半周期長指標
 
 ; スタートビットを「短(2400Hz)」と認める上限 (cmt_measure_high の反復数)。
@@ -196,7 +194,9 @@ CMH_WAIT_OUTER  EQU     16
 
 ;------------------------------------------------------------------------------
 ; cmt_read_byte: テープから1バイト読み取り (適応サンプル点方式)
-;   出力: A = 読み取ったバイト, キャリー = 0 (成功) / キャリー = 1 (テープ終端)
+;   出力: A = 読み取ったバイト, キャリー = 0。cmt_measure_high はキャリー 1 で戻る
+;   経路を持たない (信号の来ない間は中断キーまで待ち続ける) ので、テープの終わりを
+;   キャリーで返すことはない。
 ;   壊すレジスタ: A, B, X, Y
 ;
 ; 【途中経過は RAM に置かない】適応閾値はシステムスタックの 2 バイト枠、
@@ -238,7 +238,6 @@ cmt_read_byte:
                 ; スタートビット待ち: 短 HIGH(='0') が来るまで読み飛ばす。
 crb_start:
                 BSR    cmt_measure_high ; X = 直近 HIGH 半周期長 (反復数)
-                BCS     crb_eot0         ; EOT (終端) → 閾値枠を積む前なのでそのまま脱出
                 CMPX    #CRB_THRESH
                 BHS     crb_start        ; 長 HIGH → スタートビットでない → 測り直し
                 CMPX    #CRB_MIN
@@ -262,10 +261,6 @@ crb_start:
 ;   本体は 7t_diskboot.inc (通常フローは直前の JSR から cdt_store へ飛び越える)。
 ;------------------------------------------------------------------------------
                 BRA     cdt_store
-crb_eot0:
-                ; スタートビット待ちでのテープ終端。閾値枠はまだ積んでいないので
-                ; そのまま (キャリー=1 のまま) 復帰する。
-                RTS
 
 ;------------------------------------------------------------------------------
 ; SWAP <変数>, <変数>  — 2 つの変数の値を交換する
@@ -305,7 +300,6 @@ cdt_store:
                 LDY     #0               ; ビットカウンタ
 crb_bit:
                 LBSR    cmt_measure_high ; このビットの HIGH 半周期長を計測 (A は保存)
-                BCS     crb_rb_eot       ; EOT (終端) → キャリー=1 で即脱出
                 ; 短(< 適応閾値) → '0', 長(>= 適応閾値) → '1' を C へ
                 CMPX    ,S               ; X < 閾値 で C=1 (短=0), X>=閾値 で C=0 (長=1)
                 BHS     crb_one          ; 長 → ビット=1
@@ -321,16 +315,9 @@ crb_shift:
                 ; 8ビット収集完了 (結果バイトは既に A にある)
                 ; ストップビット×2 (長 HIGH) を消費し、次バイトの境界へ揃える。
                 LBSR    cmt_measure_high ; ストップビット1 を消費 (立ち下がりで復帰)
-                BCS     crb_rb_eot       ; EOT (終端) → キャリー=1 で即脱出
                 LBSR    cmt_measure_high ; ストップビット2 を消費 (立ち下がりで復帰)
-                BCS     crb_rb_eot       ; EOT (終端) → キャリー=1 で即脱出
                 ANDCC   #$FE             ; キャリークリア (成功)
                 PULS    X,PC             ; 閾値枠を捨てて復帰 (X は破壊対象)
-crb_rb_eot:
-                ; テープ終端。キャリー=1 のまま (成功=0 と区別できる) 復帰し、
-                ; cmt_read_block でブロック読み取り失敗として扱わせる。終端か
-                ; チェックサム誤りかの区別は cmt_read_block が B で返す。
-                PULS    X,PC             ; 閾値枠を捨てて復帰 (キャリーは保つ)
 
 ;------------------------------------------------------------------------------
 ; cmt_read_block: テープから1ブロック読み取り
@@ -343,13 +330,8 @@ crb_rb_eot:
 ;     U レジスタ   = データ格納先 (呼び出し前にセット)
 ;   戻り値:
 ;     キャリー = 0 → 成功
-;     キャリー = 1 → 失敗。**失敗の種別は B で返す**
-;                      B = 0    → チェックサムエラー (再試行すれば読める)
-;                      B ≠ 0   → テープ終端 (EOT。再試行しても永久に読めない)
-;                    上位のヘッダ探索は B を見て再試行と脱出を分ける。
-;                    種別を RAM のフラグに置かないのは、テープ読取中に低位
-;                    ページを 1 バイトも書かないため (cmt_measure_high の
-;                    頭書き参照)。
+;     キャリー = 1 → チェックサムの誤り ($02D5 = 1)。テープの終わりは検出しない
+;                    (cmt_read_byte は信号の来ない間は中断キーまで待ち続ける)。
 ;   壊すレジスタ: A, B, X, Y, U (データ書込後に進む)
 ;   格納の上限: ヘッダ探索は cmt_read_hdr (20 byte まで) から入る。通常の入口は
 ;   上限なし (255 byte)。上限を超えた分は読み飛ばし、チェックサムには加える。
@@ -489,30 +471,19 @@ crb_no_data:
                 JSR     time_resume     ; タイマ再開 (シャドウの状態へ)
                 ANDCC   #$FE            ; 成功
                 PULS    A,PC            ; 格納上限の枠を捨てて復帰 (A は破壊対象)
-; crb_getb — テープから 1 バイト読む。終端なら呼び出し元へ戻らず crb_eot_err
-;   へ抜ける。ブロック読取りの各所の共通の入口。
+; crb_getb — テープから 1 バイト読む (cmt_read_byte への末尾分岐)。
+;   ブロック読取りの各所の共通の入口。
 crb_getb:
-                LBSR    cmt_read_byte
-                BCC     crb_getb_ok
-                LEAS    2,S             ; 呼び出し元の戻りアドレスを捨てる
-                BRA     crb_eot_err
-crb_getb_ok:
-                RTS
+                LBRA    cmt_read_byte   ; (末尾分岐。cmt_read_byte はキャリー 0 で戻る)
 
 crb_cksum_err:
                 LDA     #1              ; CAS0 エラー種別 = チェックサムエラー
                 STA     >CAS0_ERR       ;   (参考書籍)
-                CLRB                    ; B=0 → チェックサムエラー (再試行可)
-                BRA     crb_fail
-crb_eot_err:
-                LDA     #2              ; CAS0 エラー種別 = 読み込みエラー
-                STA     >CAS0_ERR
-                LDB     #$FF            ; B≠0 → テープ終端 (再試行しても読めない)
 crb_fail:
-                JSR     time_resume     ; タイマ再開 (シャドウの状態へ。B は保存される。
+                JSR     time_resume     ; タイマ再開 (シャドウの状態へ。
                                         ;   CC は変化するので直後に ORCC で立て直す)
                 ORCC    #$01            ; キャリーセット = エラー
-                PULS    A,PC            ; 格納上限の枠を捨てて復帰 (B と CC は保つ)
+                PULS    A,PC            ; 格納上限の枠を捨てて復帰 (CC は保つ)
 
 ;------------------------------------------------------------------------------
 ; LOAD コマンド実装
@@ -547,8 +518,7 @@ impl_load:
                 JSR     skip_spc                ; LOAD と引数の間の空白を除去
                 ; ファイル名解析 + ",R" (ロード後自動実行) 解析を一括で行う。
                 ; impl_load_fname_r は impl_parse_fname を呼んだ後、続く ",R" を解析して
-                ; mlm_run (0=無/1=有) に記録する。本体の置き場所は容量の都合で
-                ; 空きプールで、ここは呼び出し 1 個 (JSR 1 本ぶんの長さ) に留める。
+                ; mlm_run (0=無/1=有) に記録する。
                 JSR     impl_load_fname_r       ; ファイル名 + ,R 解析 → cmt_filename/dl_device/mlm_run
                 ; 装置分岐: dl_device bit7=1 (ディスク) ならディスク経路へ。
                 ; カセット経路 (bit7=0) は以降このままテープ経路。ディスク経路は
@@ -557,7 +527,8 @@ impl_load:
                 LBMI    disk_load_body
                 ; ディスパッチャ復帰用 X (引数末尾) を先に積む。ブロック読取
                 ; (cmt_read_block) が X を壊すため、以降の全経路はここで積んだ
-                ; 値を出口 (il_asc_go / il_data_err / ilm_done) で戻す。
+                ; 値を出口 (il_asc_go / ilm_done) で戻す。誤りの出口は積んだ値を
+                ; 誤り処理のスタックの巻戻しに委ねる。
                 PSHS    X
                 ; モーター ON
                 JSR     cmt_motor_on    ; モータ ON (控えも更新)
@@ -566,11 +537,8 @@ il_header:
                 LDU     #cmt_hdr_buf            ; ヘッダデータ一時バッファ (20B, RAM)
                 JSR     cmt_read_hdr            ; 格納は 20B まで (ヘッダでない本文
                                                 ;   ブロックで後続のワークを潰さない)
-                BCC     ilh_have               ; 成功 → 内容確認へ
-                TSTB                           ; 失敗: EOT (B≠0) か CRC エラー (B=0) か
-                BNE    il_data_err            ; EOT → 無限再試行せずモータ OFF で復帰
-                BRA     il_header              ; CRC エラー → 再試行
-ilh_have:
+                LBCS    isk_ioerr              ; チェックサムの誤り → モータ OFF +
+                                               ;   Device I/O Error (53。LOAD? と同じ扱い)
                 LDA     cmt_blk_type
                 BNE     il_header               ; type≠0 → ヘッダブロックでない → 再試行
                 ; ヘッダブロック取得成功
@@ -599,12 +567,6 @@ il_legacy:
                 JSR     cmt_motor_off           ; モーター OFF
                 JSR     il_ret_run              ; ,R 指定なら自動 RUN (戻らない)
                 PULS    X,PC ; ディスパッチャ復帰用 X
-                ; モーター OFF (エラー終了。,R が指定されていてもロード失敗ゆえ実行しない)
-il_data_err:
-                JSR     cmt_motor_off
-                PULS    X                       ; ディスパッチャ復帰用 X を戻す
-                ANDCC   #$FE
-                RTS
 
 ;------------------------------------------------------------------------------
 ; il_legacy: BASIC プログラムのテープ LOAD 本体。
@@ -723,6 +685,7 @@ il_stream_prep:
 ;   行が壊れる。機械語系
 ;   (LOADM/EXEC/1 文字入力) は機械語との受け渡し規約のため INPBUF のまま変えない。
 ;   DA_SECBUF は SPACE$/STRING$ の式評価と排他 (読取中は式評価が走らない)。
+;   データブロックのチェックサムの誤りは Device I/O Error (53) で中止する (戻らない)。
 ;   出力: A = バイト, C=0 成功 / C=1 終端。破壊: A,B,X,Y (U は保存)
 ;------------------------------------------------------------------------------
 il_get_byte:
@@ -732,11 +695,8 @@ il_get_byte:
 igb_fill:
                 LDU     #DA_SECBUF
                 JSR     cmt_read_block
-                BCC     igb_have                ; 成功 → タイプ確認へ
-                TSTB                            ; 失敗: EOT (B≠0) か CRC (B=0) か
-                BNE     igb_eof                 ; EOT → データ終端扱い
-                BRA     igb_fill                ; CRC エラー → 再試行
-igb_have:
+                LBCS    isk_ioerr               ; チェックサムの誤り → モータ OFF +
+                                                ;   Device I/O Error (53)
                 LDA     cmt_blk_type
                 CMPA    #1
                 BNE     igb_eof                 ; type≠1 → データ終端
@@ -887,13 +847,7 @@ ilm_args_done:
 ilm_header:
                 LDU     #cmt_hdr_buf
                 JSR     cmt_read_hdr            ; 格納は 20B まで (il_header と同じ)
-                BCC     ilmh_have               ; 成功 → 内容確認へ
-                TSTB                            ; 失敗: EOT (B≠0) か CRC エラー (B=0) か
-                BNE     ilm_done                ; EOT (存在しない次ファイルのヘッダを
-                                                ;   探し続けない) → モータ OFF で復帰。
-                                                ;   呼び出した機械語はここへ戻る。
-                BRA     ilm_header              ; CRC エラー → 再試行
-ilmh_have:
+                BCS     ilmh_ioerr              ; チェックサムの誤り → 53 (LOAD のヘッダと同じ)
                 LDA     cmt_blk_type
                 BNE     ilm_header              ; type≠0 → ヘッダでない
                 ; ファイル名照合 (大文字小文字をそのまま比較。指定なしは無条件 =
@@ -907,6 +861,12 @@ ilm_name_ok:
                 ; とし、データ領域内に現れる $01 $3C 様パターンの取り扱いを一切
                 ; 変えない (立てたままだと本文中の並びを偽 sync として弾いてしまう)。
                 CLR     cmt_strict_hdr
+                ; ヘッダのファイル形式 (+8) が機械語 ($02) でなければ、名前の表示の
+                ; 直後に Bad Data In File (58)。LOADM で読むのは SAVEM で作った
+                ; 機械語ファイルに限る (参考書籍)。
+                LDA     cmt_hdr_buf+8
+                CMPA    #$02
+                LBNE    bdf_err                 ; モータ停止 + Bad Data In File
                 ; ブロックバッファを空に初期化 (論理バイトリーダ用)
                 CLR     mlm_brem
                 ; セグメント列の解析開始
@@ -974,6 +934,11 @@ mlm_get_req:
                 BCC     mgr_ok
                 LEAS    2,S             ; 呼び出し元の戻りアドレスを捨てる
                 BRA     ilm_done
+ilmh_ioerr:
+                ; LOADM のヘッダのチェックサムの誤り。偽 sync 弾きを解いてから、
+                ; LOAD? と同じ出口 (モータ OFF + Device I/O Error (53)) へ。
+                CLR     cmt_strict_hdr
+                JMP     isk_ioerr
 mgr_ok:
                 RTS
 
@@ -1067,6 +1032,7 @@ ild_no_ml:
 ;   ブロックバッファ (MLBUF = テープの入出力バッファ) が
 ;   空なら次のデータブロック (種別 01) を読み込む。
 ;   type=$02/$FF/その他 (=データ終端) に達したらキャリーセットで返す。
+;   データブロックのチェックサムの誤りは Device I/O Error (53) で中止する (戻らない)。
 ;   出力: A = バイト, キャリー=0 成功 / キャリー=1 終端
 ;   破壊: A,B,X,U (cmt_read_block 経由)。mlm_seg_len 等は保存。
 ;------------------------------------------------------------------------------
@@ -1077,11 +1043,8 @@ mlm_get_byte:
 mgb_fill:
                 LDU     #MLBUF
                 JSR     cmt_read_block
-                BCC     mgb_have                ; 成功 → タイプ確認へ
-                TSTB                            ; 失敗: EOT (B≠0) か CRC エラー (B=0) か
-                BNE     mgb_eof                 ; EOT → データ終端扱い (無限再試行しない)
-                BRA     mgb_fill                ; CRC エラー → 再試行
-mgb_have:
+                LBCS    isk_ioerr               ; チェックサムの誤り → モータ OFF +
+                                                ;   Device I/O Error (53)
                 LDA     cmt_blk_type
                 CMPA    #1
                 BNE     mgb_eof                 ; type≠1 → データ終端

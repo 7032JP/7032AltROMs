@@ -22,9 +22,7 @@
 ;   - 描画は B/R/G 3 プレーン直接 STA
 ;   - キーボードはサブ CPU の FIRQ で受け、リングバッファに格納
 ;
-; 用語凡例: コメント中の「参考書籍」は docs/LEGAL.md §6.1 に挙げる 4 点を指し、
-;   「動作観察」は実行環境の上で動かして確かめた挙動 (同 §6.2) を根拠とする
-;   事項を指す。
+; 用語凡例: コメント中の「参考書籍」「動作観察」は docs/LEGAL.md §6.1・§6.2 の定義に従う。
 ;==============================================================================
 
 ;--- 共有 RAM (絶対アドレス。常用 DP=$D0 のため拡張アドレスで参照する) ------------
@@ -997,13 +995,12 @@ funkey_entry:
                 LDA     ,X
                 ANDA    #$80            ; +0 の bit7 (割込み制御フラグ) は保つ
                 ORA     1,U             ;   (参考書籍)
-                PSHS    X                       ; テーブル先頭退避
                 LDB     #16
 fk_clr:
                 CLR     ,X+                     ; 16byte クリア
                 DECB
                 BNE     fk_clr
-                PULS    X                       ; テーブル先頭復帰
+                LEAX    -16,X                   ; テーブル先頭へ戻す
                 STA     ,X+             ; テーブル[0] = フラグ | 文字数、X→[1]
                 ANDA    #$0F
                 BEQ     fk_done
@@ -1236,11 +1233,11 @@ kbd_none:
 ;   画面の外へ出る指示は動かさない (参考書籍の座標範囲を保つ)。
 gc_arrow:
                 LDX     #WK_SYM_X
-                LDY     #640
+                LDU     #640                    ; (U はキー待ちで kb_dequeue が壊すので自由に使える)
                 BITA    #$02
                 BEQ     gca_axis
                 LDX     #WK_SYM_Y
-                LDY     #200
+                LDU     #200
 gca_axis:
                 ANDA    #$03
                 DECA
@@ -1251,7 +1248,7 @@ gca_axis:
 gca_pos:
                 CLRA
 gca_go:
-                STY     <WK_TMP                  ; 画面内の上限 (640 / 200)
+                STU     <WK_TMP                  ; 画面内の上限 (640 / 200)
                 LDB     <WK_SYM_MAGX             ; 1 ステップの移動ドット数
                 TSTA
                 BPL     gca_add
@@ -1310,8 +1307,7 @@ gcursor_entry:
                 LBCC    gr_err_coord            ; 参考書籍の座標範囲
                 LDA     #1
                 STA     <WK_SYM_MAGX             ; 1 ステップの移動ドット数 (初期値 1)
-                TFR     U,Y             ; 応答データは相対 3 から 4 byte/点
-                STY     <WK_SYM_PTR
+                STU     <WK_SYM_PTR     ; 応答データは相対 3 から 4 byte/点
 gc_loop:
                 BSR     gc_show                 ; ＋印を表示
 gc_wait:
@@ -1343,12 +1339,12 @@ gc_step:
                 STA     <WK_SYM_MAGX
                 BRA     gc_loop
 gc_take:
-                LDY     <WK_SYM_PTR              ; 指定座標を応答データへ積む
+                LDU     <WK_SYM_PTR              ; 指定座標を応答データへ積む
                 LDD     <WK_SYM_X
-                STD     ,Y++
+                STD     ,U++
                 LDD     <WK_SYM_Y
-                STD     ,Y++
-                STY     <WK_SYM_PTR
+                STD     ,U++
+                STU     <WK_SYM_PTR
                 DEC     <WK_SYM_MAGY             ; 要求された数だけ読取ったら終り
                 BNE     gc_loop
                 RTS
@@ -2443,23 +2439,34 @@ cl_plot:
                 JMP     cb_drawcell             ; セル描画 + conbuf 記録 (RTS 継承)
 
 ;--- el_body — カーソルからフィールドの終りまで Null にして描き直す (EL、参考書籍) --
+;   コンソールバッファはフィールドの終りまで Null にする。画面の描き直しは、
+;   カーソルのセルから「範囲の中で最後に Null でなかったセル」(Null にする前の
+;   値で見る) までに限る。カーソルのセルは必ず描く。その後ろの Null のままの
+;   セルは描かないので、その上の図形は残る。描き直すセルは全て Null なので、
+;   C = 1 で redraw_rng へ入り、字形を引かずにセルを埋める (dc_nul)。
 ;   バッファアドレスは変えない。A,B,X,U 破壊
 el_body:
                 JSR     fld_end_cur             ; U = フィールドの終り
-                BSR     con_cell
+                BSR     con_cell                ; X = カーソルのセル
                 PSHS    U
+                LEAU    1,X                     ; U = 描き直しの終り (カーソルのセルは描く)
 elb_lp:
-                CMPX    ,S
-                BCC     elb_done
+                TST     ,X
+                BEQ     elb_nul
+                LEAU    1,X                     ; Null でなかったセルの次まで描く
+elb_nul:
                 CLR     ,X+
-                BRA     elb_lp
-elb_done:
-                PULS    U
+                CMPX    ,S
+                BCS     elb_lp
+                LEAS    2,S
+                COMA                            ; C = 1: Null のセルとして描く
 
-;--- redraw_rng — カーソルのセルから U の手前までコンソールバッファの文字を描き直す ------
-;   カーソルは元へ戻す。全レジスタ保存
+;--- redraw_rng — カーソルのセルから U の手前までを描き直す -----------------------
+;   C = 0 で入るとコンソールバッファの文字を描き、C = 1 (el_body) で入ると
+;   Null のセルとして字形を引かずに埋める。カーソルは元へ戻す。全レジスタ保存
+;   (CC も入口の値に戻る)
 redraw_rng:
-                PSHS    A,B,X,Y,U
+                PSHS    CC,A,B,X,Y,U
                 LDD     <WK_CURSOR_X
                 PSHS    A,B
                 BSR     con_cell
@@ -2471,7 +2478,9 @@ redraw_rng:
 rr_lp:
                 BSR     con_cell
                 LDA     ,X
-                BSR     draw_char_at_cursor
+                LDB     2,S                     ; 入口の CC
+                LSRB                            ; C = 入口の C
+                BSR     dc_ent
                 LEAY    -1,Y
                 BEQ     rr_done                 ; 最後のセルの後はバッファアドレスを進めない
                 JSR     cell_next
@@ -2479,7 +2488,7 @@ rr_lp:
 rr_done:
                 PULS    A,B
                 STD     <WK_CURSOR_X
-                PULS    A,B,X,Y,U,PC
+                PULS    CC,A,B,X,Y,U,PC
 
 ;------------------------------------------------------------------------------
 ; draw_char_at_cursor — 現在カーソル位置 (文字グリッド) に A の文字を描画
@@ -2492,9 +2501,13 @@ rr_done:
 ;       その F を消し、そのフィールドの残りにも同じ属性を及ぼす。
 ;     ・一連の外 … セルのアトリビュートのまま。
 ;   $04 GET の編集中 (GE_EDIT = $40) は M (変更) を立てる。A,B,X,Y,U 保存。
+;   dc_ent は C = 1 で入ると、アトリビュートの記録は同じに行い、VRAM は字形を
+;   引かずに Null のセルとして埋める (redraw_rng が el_body から来たとき)。
 ;------------------------------------------------------------------------------
 draw_char_at_cursor:
-                PSHS    A,B,X,Y,U
+                ANDCC   #$FE                    ; C = 0: 字形を描く
+dc_ent:
+                PSHS    CC,A,B,X,Y,U
                 PSHS    A                       ; char 退避 (MUL が A を壊す前に)
                 BSR     con_cell                ; X = キャラクタバッファアドレス
                 LDA     ,S                      ; A = char (退避値を覗く)
@@ -2529,14 +2542,19 @@ dc_col:
                 MUL                             ; D = char * 8
                 ADDD    #font_base
                 TFR     D,U                     ; U = フォント先頭
-                BSR     cell_vaddr              ; X = セル先頭 VRAM byte offset (B 面)
+                JSR     cell_vaddr              ; X = セル先頭 VRAM byte offset (B 面)
         IFDEF SUBSYS_TB
+                LDB     ,S                      ; 入口の CC
+                LSRB                            ; C = 1: Null のセル
                 LDA     <WK_CELL_COL
                 JSR     tb_glyph                ; 12 の面へ描く
-                PULS    A,B,X,Y,U,PC
+                PULS    CC,A,B,X,Y,U,PC
         ELSE
                 LDA     IO_VRAM_GATE            ; gate ON
                 LDB     #8                      ; 8 行
+                LDA     ,S                      ; 入口の CC
+                LSRA
+                BCS     dc_nul                  ; C = 1: Null のセル
                 TST     <WK_CHAR_DBL
                 BNE     dc_dbl
                 ;--- 80桁 (8px): 1 byte/行、各プレーンをセルの属性の bit で選択 ---
@@ -2555,18 +2573,15 @@ dc_dbl_loop:
                 LDA     ,U+                     ; フォントバイト
                 PSHS    B,U                     ; 行カウンタ + フォントptr 退避
                 LDU     #dbl_nibble             ; U = 倍化テーブル
-                TFR     A,B
-                LSRB
-                LSRB
-                LSRB
-                LSRB                            ; B = 上位ニブル
-                LDB     B,U                     ; B = dbl[上位] = 左バイト
-                PSHS    A                       ; 元フォントバイト退避
-                TFR     B,A
+                TFR     A,B                     ; B = 元フォントバイト (dc_put3 は B を保つ)
+                LSRA
+                LSRA
+                LSRA
+                LSRA                            ; A = 上位ニブル
+                LDA     A,U                     ; A = dbl[上位] = 左バイト
                 BSR     dc_put3                 ; 左 (X) へ色選択書込
-                PULS    A                       ; 元フォントバイト
-                ANDA    #$0F                    ; A = 下位ニブル
-                LDA     A,U                     ; A = dbl[下位] = 右バイト (U は倍化テーブルのまま)
+                ANDB    #$0F                    ; B = 下位ニブル
+                LDA     B,U                     ; A = dbl[下位] = 右バイト (U は倍化テーブルのまま)
                 LEAX    1,X                     ; 右セルへ
                 BSR     dc_put3
                 LEAX    -1,X                    ; 左へ戻す
@@ -2601,31 +2616,57 @@ dcp_st:
                 CMPX    #$C000
                 BCS     dcp_lp
                 PULS    A,B,X,PC
+;--- dc_nul — Null のセルを字形を引かずに 8 ライン × 3 プレーンへ直に書く -------------
+;   色ビットの立たないプレーンは 0、立つプレーンは R (反転) のセルだけ $FF にする
+;   (字形が全て 0 の文字を dc_put3 で描いたときと同じ値)。単色表示は WK_CELL_COL を
+;   緑へ差し替えた後なので同じ規則で済む。20 行モードの下端 2 ラインは続く dc_end
+;   (dc_pad10) が同じ規則で埋める。入口: X = セルの先頭 (B 面)、ゲートは開。Y 破壊。
+dc_nul:
+                LDB     <WK_CELL_COL
+                BITB    #$08                    ; R = 反転表示
+                BNE     dcn_pl
+                CLRB                            ; 反転でなければ 3 プレーンとも 0
+dcn_pl:
+                CLRA
+                LSRB                            ; C = このプレーンの色ビット
+                SBCA    #0                      ; A = $00 / $FF
+                LDY     #8                      ; 8 ライン
+dcn_ln:
+                STA     ,X
+                TST     <WK_CHAR_DBL
+                BEQ     dcn_1
+                STA     1,X                     ; 40 桁 (倍幅) は右のバイトも
+dcn_1:
+                LEAX    80,X
+                LEAY    -1,Y
+                BNE     dcn_ln
+                LEAX    $4000-640,X             ; 次のプレーンの同じセル
+                CMPX    #$C000
+                BCS     dcn_pl
+                LEAX    640-$C000,X             ; X = セルの先頭 + 8 ライン (B 面)
 dc_end:
                 ; 10px 行 (20 行モード) はセルが 10 ライン。フォントは 8 ライン
                 ;   ぶんしかないので、残る下端 2 ラインを消しに行く (X はここで
                 ;   セル先頭 + 8 ライン = その 2 ラインの先頭を指している)。
                 BSR     dc_pad10
                 STA     IO_VRAM_GATE            ; gate OFF
-                PULS    A,B,X,Y,U,PC
+                PULS    CC,A,B,X,Y,U,PC
         ENDC
 
 ;--- cell_vaddr — カーソル位置の文字セル先頭 VRAM アドレスを X に返す --------------
 ;   X = 行 × 行バイト (640/800) + 桁オフセット (40 桁は倍幅なので桁 × 2)。
 ;   字形描画 (draw_char_at_cursor) と反転 (cursor_toggle) が共用する。
-;   途中結果はスタックに置く。A,B 破壊。
+;   A,B 破壊。
 cell_vaddr:
                 LDA     <WK_CURSOR_Y
                 JSR     su_ofs                  ; D = 行 × 行バイト (640/800)
-                PSHS    A,B                     ; 行方向オフセット
+                TFR     D,X                     ; 行方向オフセット
                 LDB     <WK_CURSOR_X             ; 桁オフセット
                 TST     <WK_CHAR_DBL
                 BEQ     cva_col
                 ASLB                            ; 40 桁 (倍幅): 桁 × 2
 cva_col:
-                CLRA
-                ADDD    ,S++
-                TFR     D,X
+                ABX
                 RTS
 
 ;------------------------------------------------------------------------------
@@ -3238,8 +3279,7 @@ pt_match:
                 LDA     #$87
                 STA     >IO_ALU_CMD             ; ALU = 比較
                 LDA     ,U
-                LDA     >IO_ALU_CMP             ; 比較の結果
-                BRA     pt_mexit
+                LDA     >IO_ALU_CMP             ; 比較の結果 (この組では続く pt_mexit へ落ちる)
         ELSE
 ;--- pt_match (SUBSYS_TB) — 行オフセット+PT_BC の 1byte を全色照合 (8px 同時) ------
 ;   出力 A = ヒットビットマップ (PT_MODE 適用済)、CC.Z = 全 0。B,X,U 破壊。
@@ -3364,8 +3404,8 @@ pt_scan_rf:
                 STX     <PT_DIR                 ;   (行端まで走査しても、ヒット有無の判定は
                 LDX     #PT_COLS*256+$FF        ;   呼出側比較でリミット列の打ち切りと等価)
                 STX     <PT_LIM                 ; リミット列 / MODE=$FF (塗れる点)
-        ENDC
                 BRA     pt_scan
+        ENDC
 pt_sfd:
                 PSHS    B                       ; X = 列*8 + ビット内画素
                 LDA     <PT_BC
@@ -4069,14 +4109,10 @@ null_to_end:
 nte_lp:
                 LEAX    1,X
                 CMPX    ,S
-                BCC     nte_none
-                TST     ,X
+                BCC     nte_ret                 ; C = 0 (見つからない)
+                TST     ,X                      ; (TST と TFR は C を変えない: C = 1 のまま)
                 BNE     nte_lp
                 TFR     X,U
-                ORCC    #$01
-                BRA     nte_ret
-nte_none:
-                ANDCC   #$FE
 nte_ret:
                 LEAS    2,S
                 PULS    X,PC
@@ -4178,8 +4214,7 @@ msr_p1:
                 LDB     <WK_WIN_TOP
                 RTS
 msr_sc:
-                LDA     <WK_WIN_TOP              ; スクロールモード画面
-                LDB     <WK_WIN_END
+                LDD     <WK_WIN_TOP              ; スクロールモード画面 (A = 上端 / B = WK_WIN_END)
                 RTS
 
 ;------------------------------------------------------------------------------
@@ -4604,11 +4639,9 @@ g4f_lp:
                 TST     ,S
                 BEQ     g4f_put
                 JSR     con_cell
-                TFR     X,D
-                SUBB    <WK_SCREEN_W
-                SBCA    #0
-                TFR     D,X
-                LDA     ,X                      ; 1 つ上の行の同じ桁の文字
+                LDB     <WK_SCREEN_W
+                NEGB                            ; B = -桁数 (-40 / -80)
+                LDA     B,X                     ; 1 つ上の行の同じ桁の文字
 g4f_put:
                 JSR     draw_char_at_cursor
                 JSR     cell_next
@@ -4650,7 +4683,7 @@ g4i_lp:                                         ; [X, U) を 1 つ後ろへ
                 BHI     g4i_lp
                 STA     ,X                      ; カーソルのセルに文字
                 PULS    X,U
-                LEAU    1,U
+                LEAU    1,U                     ; (C = 0: 上の CMPU が等しくて止まった)
                 JSR     redraw_rng              ; カーソルのセルから Null だったセルまで描き直す
                 BRA     g4_putj         ; セルを 1 つ進めてキー待ちへ (g4_put の末尾と共用)
 g4_bs:
@@ -4660,9 +4693,9 @@ g4_bs:
                 BSR     cell_prev
                 BRA     g4_del1                 ; 1 つ前のセルは同じフィールド (保護は同じ)
 g4d_done:
-                CLR     -1,X                    ; 最後に Null
+                CLR     -1,X                    ; 最後に Null (C = 0)
                 PULS    U
-                JSR     redraw_rng
+                JSR     redraw_rng              ; C = 0: 文字を描く
                 BRA     g4_kjmp
 g4_del:
                 JSR     ge_prot                 ; 保護されたフィールドは変更しない
@@ -4843,10 +4876,8 @@ sym_dupx_loop:
                 JSR     pset_internal           ; WK_PX_X/Y, WK_COLOR で 1 dot
         ENDC
 sym_nodot:
-                LDX     <WK_SYM_VEC
-                LEAX    2,X                     ; 桁送り DU
                 LDU     #WK_PX_X
-                BSR     sym_addvec              ; 打点位置を 1 ドット桁送り
+                BSR     sym_addv2               ; 打点位置を 1 ドット桁送り
                 DEC     <WK_SYM_DUPX
                 BNE     sym_dupx_loop
                 LSR     <WK_SYM_BITM             ; 次ビットへ
@@ -4868,10 +4899,8 @@ sym_nodot:
                 MUL                             ; D = magX*8
                 STD     <WK_SYM_CX
 sym_chadv_loop:
-                LDX     <WK_SYM_VEC
-                LEAX    2,X                     ; 桁送り DU
                 LDU     #WK_SYM_X
-                BSR     sym_addvec
+                BSR     sym_addv2
                 LDD     <WK_SYM_CX
                 SUBD    #1
                 STD     <WK_SYM_CX
@@ -4885,7 +4914,11 @@ sym_chadv_loop:
 ;   U = 進める座標対 (16 bit の X, Y が並んだ 4 byte)
 ;   表は「↓ → ↑ ←」を 1 周ぶん余分に持たせた輪で、アングルコード A の位置が
 ;   行送り DV、その 2 byte 後が桁送り DU になる (参考書籍の図の関係)。
+;   sym_addv2 は X = 桁送り DU (WK_SYM_VEC + 2) を置いてから進める入口。
 ;------------------------------------------------------------------------------
+sym_addv2:
+                LDX     <WK_SYM_VEC
+                LEAX    2,X                     ; 桁送り DU
 sym_addvec:
                 LDB     ,X                      ; 画面 X 成分 (-1 / 0 / +1)
                 SEX
@@ -5388,13 +5421,11 @@ c16_dloop:
 ;--- cb_valid — A=桁, B=行 が画面範囲内なら C=1 -------------------------------
 cb_valid:
                 CMPA    <WK_SCREEN_W
-                BCC     cbv_bad
+                BCC     cbv_bad                 ; C=0 (範囲外)
                 CMPB    <WK_SCREEN_H
                 BCC     cbv_bad
                 ORCC    #$01                    ; C=1 (範囲内)
-                RTS
 cbv_bad:
-                ANDCC   #$FE                    ; C=0 (範囲外)
                 RTS
 
 ;==============================================================================
@@ -5693,7 +5724,7 @@ cbput_fin:
 cb_next_cell:
                 LDA     <CB_ROW
                 CMPA    <CB_RMAX
-                BHI     cbn_done                ; 最終行を越えた → 終了
+                BHI     cbn_done                ; 最終行を越えた → 終了 (C=0)
                 LDB     <CB_COL
                 STB     <CB_DCOL
                 STA     <CB_DROW
@@ -5710,9 +5741,7 @@ cb_next_cell:
 cbn_col:
                 STA     <CB_COL
                 ORCC    #$01
-                RTS
 cbn_done:
-                ANDCC   #$FE
                 RTS
 
 ;------------------------------------------------------------------------------
@@ -6016,7 +6045,7 @@ c01x_rej:
                 LDA     #$3C                    ; INIT のパラメタの誤り (参考書籍)
                 STA     >SH_ERR
                 LDX     #c01x_rstp
-                LDY     #SH_PARAM               ; 複写は Y で行う。U は共有 RAM の
+                LEAY    ,U                      ; 複写は Y で行う。U は共有 RAM の
 c01x_cp:                                        ;   パラメータ欄 ($D383) を指したまま
                 LDA     ,X+                     ;   でないと、入り直した先の n,U の
                 STA     ,Y+                     ;   参照が 8 バイトずれる
@@ -6627,9 +6656,8 @@ prw_np:
         IFNDEF SUBSYS_TB
                 TST     <PBF_PMASK              ; $1E: U は行を通してプレーン実アドレス
                 BEQ     prw_u0                  ;   (putb/put1e の毎回加算を行頭に集約)
-                TFR     U,D
-                ADDD    <PBF_PLOFS
-                TFR     D,U
+                LDD     <PBF_PLOFS
+                LEAU    D,U
 prw_u0:
         ENDC
                 LDB     <PBF_NB
@@ -6931,9 +6959,8 @@ prb_1e:
                 ; $1E: 対象プレーンのみへ端マスク付き合成 (他プレーンには触れない)。
                 ;   演算指定の適用は pb1e_op に集約 (4 経路で同一の意味論)。
                 PSHS    B,U                 ; パターンと行走査ポインタ (B 面基準)
-                TFR     U,D                 ;   ※ TFR U,D は B を壊すので退避が要る
-                ADDD    <PBF_PLOFS
-                TFR     D,U                 ; U = 対象プレーン実アドレス
+                LDD     <PBF_PLOFS          ;   ※ LDD は B を壊すので退避が要る
+                LEAU    D,U                 ; U = 対象プレーン実アドレス
                 PULS    A                   ; A = 退避したパターン
                 ANDA    <PBF_MASK           ;   ∧端マスク
                 JSR     pb1e_op
@@ -7031,12 +7058,11 @@ tab_at:
                 PSHS    A,B,X
                 LDX     #TAB_TABLE
                 LDB     <WK_CURSOR_X
-                PSHS    B
                 LSRB
                 LSRB
                 LSRB                            ; B = 桁 / 8 = 表のバイト位置
                 ABX
-                PULS    B
+                LDB     <WK_CURSOR_X
                 ANDB    #$07
                 INCB                            ; 桁のビットを最上位へ寄せる回数
                 LDA     ,X
@@ -7442,9 +7468,7 @@ av_box:
                 BSR     abx_h                   ; 下辺
                 LDD     <WK_RECT_Y1
                 SUBD    #1
-                PSHS    D
-                SUBD    <WK_RECT_Y0
-                PULS    D                       ; (PULS は CC を変えない)
+                CMPD    <WK_RECT_Y0
                 BLE     abx_r                   ; 高さが 2 未満
                 LDX     <WK_RECT_Y0
                 LEAY    1,X
@@ -8003,10 +8027,13 @@ tcl_4:
 
 ;--- tb_glyph — U の字形 8 ラインを、X (1 ライン 40 バイトの面の中の位置) から 12 の面へ描く ---
 ;   A = 属性。字形のビットが 1 の画素は字の色、0 の画素は地の色 (動作観察)。
+;   C = 1 で入ると Null のセルとして、字形を引かずに 8 ラインを地の色で埋める。
 tb_glyph:
-                PSHS    X
+                PSHS    CC,X
                 BSR     tb_col
                 LDX     #g2b_tab
+                LSR     ,S+                     ; C = 入口の C (Null のセル)
+                BCS     tnl_pl
 tgl_pl:
                 BSR     tb_pg
                 PSHS    X,U                     ; ,S = 表 / 2,S = 字形 / 4,S = 位置
@@ -8039,12 +8066,34 @@ tgl_rw:
                 PULS    X,U
                 CMPX    #g2b_tab+12
                 BNE     tgl_pl
+tgl_end:
                 STA     >IO_VRAM_GATE
                 PULS    X
 tb_prst:
                 LDA     <AV_MISC                ; $D430 を控えの値に戻す
                 STA     >IO_AV_MISC
                 RTS
+
+;--- tnl_pl — tb_glyph の Null のセル: 各面の 8 ラインを地の色のビットで埋める ---------
+tnl_pl:
+                JSR     tb_pg
+                ADDD    ,S                      ; + 位置
+                TFR     D,Y
+                CLRA
+                ASL     <TB_BW+1
+                ROL     <TB_BW
+                BCC     tnl_m
+                COMA                            ; この面の地の色のビットが 1
+tnl_m:
+                LDB     #8
+tnl_rw:
+                STA     ,Y
+                LEAY    40,Y
+                DECB
+                BNE     tnl_rw
+                CMPX    #g2b_tab+12
+                BNE     tnl_pl
+                BRA     tgl_end
 
 ;--- tb_pix — (WK_PX_X, WK_PX_Y) の 1 画素に色 TB_FW を演算 WK_PB_FN で 12 の面へ置く -------
 ;   1 ライン 40 バイト。TB_FW は送り出して壊す。A/B/X/U/WK_TMP 破壊。

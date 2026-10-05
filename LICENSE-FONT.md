@@ -1,11 +1,13 @@
 # Bundled font: provenance and license / 同梱するフォントの由来とライセンス
 
 This file covers the one third-party material bundled in this repository:
-the bitmap font in fonts/shinonome/. Everything else in the repository is
-this project's own work under the MIT License (see LICENSE).
+the bitmap font in fonts/shinonome/, and the glyphs in roms/kanji.rom /
+roms/kanji2.rom taken from it (section 3). Everything else in the repository
+is this project's own work under the MIT License (see LICENSE).
 
 本ファイルは、本リポジトリが同梱する唯一の第三者素材である fonts/shinonome/
-のビットマップフォントについて述べます。それ以外はすべて本プロジェクトの
+のビットマップフォントと、roms/kanji.rom / roms/kanji2.rom に含まれる同フォント
+由来の字形 (第 3 節) について述べます。それ以外はすべて本プロジェクトの
 成果物で、MIT License (LICENSE) の対象です。
 
 --------------------------------------------------------------------------

@@ -22,7 +22,8 @@
 ;        (a) モータ ON → スピンアップ待機 → RESTORE 再発行 → Type I ステータス
 ;            bit7=NotReady 判定 (ドライブ READY / メディア存在のプリフライト)
 ;        (b) READY なら起動セクタ (トラック 0 / サイド 0 / セクタ 1) を $0100 へ
-;            読めるかを試す (= IPL ロード試行)
+;            読めるかを試す (= IPL ロード試行)。RESTORE から 20 ms 以上待ってから読み、
+;            読めなければ RESTORE → 20 ms 以上の待ち → 読み直しを 5 回まで繰り返す
 ;      を行い、最初に成立したドライブから起動する:
 ;        ドライブ 0 で成立 → resident boot ($FE00、initiate がモード別イメージを
 ;                            転送済) へ引渡す (規約どおりの引渡し経路)。
@@ -34,8 +35,7 @@
 ;        全ドライブ不成立 → モータ OFF し、BASIC モードなら BASIC の二次/ウォーム
 ;                            入口へ (A=0 規約)、DOS モードならブザーを鳴らして
 ;                            止まる (参考書籍)。
-;      ★ IPL の置き場は起動モードに依らず $0100。IPL は $0100〜$02FF の
-;        絶対アドレスを読み書きしてよく、置き場を変えると参照先が食い違う。
+;      ★ IPL の置き場は起動モードに依らず $0100。
 ;      IPL / BASIC へ渡す前に RS-232C 等の制御レジスタを初期化する (参考書籍)。
 ;      ★ ドライブが READY でない (メディア無し) 状態でセクタ READ を発行しない
 ;        (動作観察に基づく挙動)。READ を出すのはプリフライトが READY を返した後だけ。
@@ -52,6 +52,7 @@ STACK_TOP       EQU     $FC80           ; 起動中スタック (RAM 末端付�
 BOOTIMG_ENT     EQU     $FE00           ; resident boot 入口 (initiate が転送済)
                 IFNDEF  STAGE_ALT_RAM
 BOOTSVC_RW      EQU     $FE08           ; 起動 ROM の DREAD 入口 (参考書籍)
+BOOTSVC_RST     EQU     $FE02           ; 起動 ROM の RESTOR 入口
                 ENDC
 ; --- BASIC の起動ベクタ ---
 ;   当方の BASIC ROM (7tbasic3) は目印 ("7T") と 2 つの起動ベクタを BASVEC_* に置く
@@ -175,6 +176,9 @@ nb_ipl_try:
                 CLR     B,X
                 ; --- 起動セクタ (T0/side0/S1) を $0100 へ読めるか試す ---
                 ;   読めたドライブを起動ドライブとする (= IPL ロード試行)。
+                ;   直前の RESTORE から 20 ms 以上待ってから読む (nb_spinup は 2 MHz で
+                ;   約 49 ms)。
+                LBSR    nb_spinup       ; 20 ms 以上の待ち (X 破壊)
                 LDX     #IPL_LOAD
                 STX     nb_param+2
                 LDA     #$01
@@ -299,7 +303,17 @@ nbr_lp:
                 TSTA
                 BEQ     nbr_done
                 DEC     ,S              ; 残り回数
-                BNE     nbr_lp
+                BEQ     nbr_done        ; 尽きた (A ≠ 0 のまま)
+                ; --- やり直し: RESTORE → 20 ms 以上待つ → 読み直す ---
+                ;   RESTORE は同じパラメータブロックのリクエスト番号を 8 にして
+                ;   FDC サービスの RESTOR 入口で出し、番号を 10 (READ) に戻す。
+                LDA     #$08
+                STA     ,X              ; +0 = 8 (RESTOR)
+                JSR     BOOTSVC_RST
+                LDA     #$0A
+                STA     nb_param        ; +0 = 10 (READ) に戻す
+                BSR     nb_spinup       ; 20 ms 以上の待ち (X 破壊)
+                BRA     nbr_lp
 nbr_done:
                 LEAS    1,S             ; 残り回数の枠を捨てる (CC は変わらない)
                 TSTA
