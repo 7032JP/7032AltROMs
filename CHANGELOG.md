@@ -1,5 +1,9 @@
 # 更新履歴
 
+## v1.0.7 — 2026-10-06
+
+- [docs/LEGAL.md](docs/LEGAL.md) と [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) の字形と ROM の中身についての記述を、実際のデータに合わせました。ROM に変わりはありません。
+
 ## v1.0.6 — 2026-10-06
 
 - [docs/LEGAL.md](docs/LEGAL.md) で、漢字 ROM の中で 0 で埋まる枠の説明を実データに合わせ（どの符号位置にも割り当てられない枠）、起動画面の構成と生成物の照合の説明を短くしました。ROM に変わりはありません。
