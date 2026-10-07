@@ -9,8 +9,8 @@ tmp/
 # 例外: 配布用に同梱する ROM イメージのみ track する。
 #   - MIT・ソース公開の代替 ROM 一式 (7tbasic3 を含む) は、本プロジェクトが
 #     ソースからビルドした成果物。
-#   - データ ROM 3 本 (kanji / kanji2 / dicrom) も、同梱スクリプトと同梱の
-#     入力データから make が決定的に生成する成果物 (docs/LEGAL.md §9)。
+#   - データ ROM 3 本 (kanji / kanji2 / dicrom) も、同梱スクリプトで make が
+#     決定的に生成する成果物 (docs/LEGAL.md §7・§9)。
 !roms/
 roms/*
 !roms/boot_bas.rom

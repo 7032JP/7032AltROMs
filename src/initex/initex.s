@@ -6,8 +6,8 @@
 ; 8192 byte 固定。initiate.rom / initbase.rom / initav1.rom と同じメイン CPU
 ; イニシエート ROM の機種別変種である。
 ;
-; 本変種の構成差 (initiate.rom との差):
-;   1. 機種識別域の世代名が "AV4EX" (機種区分は上位世代と同じ "40")。
+; 本変種の構成差 (initiate.rom との差) は機種識別域の中身だけ (世代名 "AV4EX" と
+; 拡張世代の識別値。initiate.s の機種識別域の項を参照)。
 ;
 ; 起動処理は上位世代 (initiate.rom) と同じで、AV ブートイメージ (avboot.bin) も
 ; 同じものを取込む。フロッピー以外の起動デバイスからの起動は持たない。

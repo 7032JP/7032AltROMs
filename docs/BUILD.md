@@ -68,7 +68,7 @@ make
 | `make verify-fonts` | `build/font.bin` / `build/font16.bin` のハッシュを [`fonts/SHA256SUMS`](../fonts/SHA256SUMS) と照合し、非ゼロ符号位置の集合を [LEGAL.md](LEGAL.md) §8.1 の 2 表と照合する（`verify-release` から自動で呼ばれる） |
 | `make verify-kanji` | 同梱の入力 BDF とライセンス文のハッシュを [`fonts/SHA256SUMS`](../fonts/SHA256SUMS) と、`build/kanji.rom` / `build/kanji2.rom` のハッシュを [SHA256SUMS](../SHA256SUMS) と照合し、独自字形 107 符号位置の到達先の枠と内容を全数照合する（`verify-release` から自動で呼ばれる） |
 | `make deploy-roms` | 保守用。全再ビルドののち `build/` の産物を `roms/` へ複写し、`SHA256SUMS` を作り直す（`make` の後に `bash scripts/copy_roms.sh` を実行しても同じ） |
-| `make version` | 配布物のバージョン（`v1.0.7`）と 7T-BASIC のバージョン（`3.1`）を表示する |
+| `make version` | 配布物のバージョン（`v1.0.8`）と 7T-BASIC のバージョン（`3.1`）を表示する |
 | `make check-build-path` | 外部から与えた `BUILD` の値が削除してよいパスかを検査する（`make clean` から自動で呼ばれる） |
 | `make check-build-guard` | 外部入力 `BUILD` の安全ガードを負例で検査する（ROM は作らない。検査の詳細は Makefile のコメントに記載） |
 | `make clean` | `build/` をまるごと削除する |
@@ -171,7 +171,7 @@ python3 scripts/strip_bdf_chars.py <配布物>/bdf/shnmk16.bdf \
 | `7tbasic3/` | FM-7 / FM77AV 系 | BASIC インタプリタ本体 7tbasic3（7T-BASIC 3.1）のソース一式（`7t31/` と `common/`） |
 | `devtest/` | — | テスト用に作成した BASIC プログラムと期待値、サブシステム ROM の 6809 サンプル試験（`subsys/`）。§6 |
 
-データ ROM 3 種（`kanji.rom` / `kanji2.rom` / `dicrom.rom`）にアセンブリのソースはありません。[`scripts/genkanji.py`](../scripts/genkanji.py) と [`scripts/gendicrom.py`](../scripts/gendicrom.py) が同梱の入力データ（[`fonts/`](../fonts/)）から生成します（[LEGAL.md](LEGAL.md) §9）。
+データ ROM 3 種（`kanji.rom` / `kanji2.rom` / `dicrom.rom`）にアセンブリのソースはありません。[`scripts/genkanji.py`](../scripts/genkanji.py) が同梱の入力データ（[`fonts/`](../fonts/)）から `kanji.rom` / `kanji2.rom` を、[`scripts/gendicrom.py`](../scripts/gendicrom.py) が計算で `dicrom.rom` を生成します（[LEGAL.md](LEGAL.md) §7・§9）。
 
 ### 4.2 各 ROM のソース
 
@@ -225,7 +225,7 @@ python3 scripts/strip_bdf_chars.py <配布物>/bdf/shnmk16.bdf \
 
 **extsub** — FM77AV40EX / AV40SX の拡張サブシステム ROM のソースです。フォント部（8x8 と 8x16 の ANK フォント）だけを持ち、イメージ内の配置は §5.6 のとおりです。ソース本体は `extsub.s`。生成物は `build/extsub.rom`（49152 B）。
 
-**7tbasic3** — BASIC インタプリタ本体 7T-BASIC 3.1 のソース一式です。`7t31/` に本体、`common/` に予約語表・ジャンプ表・トークン定数（`scripts/gen_7t_keywords.py` が生成・照合）を置きます。生成物は `build/7tbasic3.rom`（31744 B）。
+**7tbasic3** — BASIC インタプリタ本体 7T-BASIC 3.1 のソース一式です。`7t31/` に最上位のアセンブリユニットと起動バナー・権利表示、`common/` にインタプリタ本体と予約語表・ジャンプ表・トークン定数（`scripts/gen_7t_keywords.py` が生成・照合）を置きます。生成物は `build/7tbasic3.rom`（31744 B）。
 
 ### 4.3 scripts/ — ビルド補助スクリプト
 

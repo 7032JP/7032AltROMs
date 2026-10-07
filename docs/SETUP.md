@@ -13,7 +13,7 @@
 | initiate | 電源 ON 直後に各部を初期化し、**BASIC 起動かディスク起動かを振り分ける** | FM77AV40 | 8192 B | `initiate.rom` |
 | initbase | 同上。26 万色モードを備えない構成向けの変種 | FM77AV20 | 8192 B | `initiate.rom` |
 | initav1 | 同上。起動イメージの仕組みを持たない世代向けの変種 | FM77AV | 8192 B | `initiate.rom` |
-| initex | 同上。拡張世代（EX / SX 系）向けの変種（機種識別域の世代名が異なる） | FM77AV20EX / AV40EX / AV40SX | 8192 B | `initiate.rom` |
+| initex | 同上。拡張世代（EX / SX 系）向けの変種（機種識別域の世代名と識別値が異なる） | FM77AV20EX / AV40EX / AV40SX | 8192 B | `initiate.rom` |
 | subsys_a | FM77AV 系のサブ CPU 側で、**FM-7 系と同じ表示・キー入力・図形描画のやりとり**を受け持つ（Type-A の位置） | FM77AV 系 | 8192 B | `subsys_a.rom` |
 | subsys_b | 同上（Type-B の位置。320×200／4096 色のアナログモードで描く点が subsys_a と異なる） | FM77AV 系 | 8192 B | `subsys_b.rom` |
 | subsyscg | 画面に出す**8x8 の英数字・片仮名フォント**を供給する | FM77AV 系 | 8192 B | `subsyscg.rom` |

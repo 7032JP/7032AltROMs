@@ -1,5 +1,9 @@
 # 更新履歴
 
+## v1.0.8 — 2026-10-07
+
+- [docs/LEGAL.md](docs/LEGAL.md) と [LICENSE-FONT.md](LICENSE-FONT.md) の記述を、配布物の実態に合わせました。ROM に変わりはありません。
+
 ## v1.0.7 — 2026-10-06
 
 - [docs/LEGAL.md](docs/LEGAL.md) と [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) の字形と ROM の中身についての記述を、実際のデータに合わせました。ROM に変わりはありません。
