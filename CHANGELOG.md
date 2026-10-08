@@ -1,5 +1,10 @@
 # 更新履歴
 
+## v1.0.9 — 2026-10-08
+
+- BASIC ROM（`7tbasic3`）で、`10 GOTO 10` のように行の最初の文が行ジャンプになっているループが、BREAK キーで止まらなかった点を直しました。
+- サブシステム ROM（`subsys_a` / `subsys_b`）、起動 ROM（`boot_bas` / `boot_dos`）、イニシエート ROM、BASIC ROM のディスクの読み書きで、ハードウェアの手順 (描画の完了待ち、FDC の BUSY の確認など) を定めに合わせました。
+
 ## v1.0.8 — 2026-10-07
 
 - [docs/LEGAL.md](docs/LEGAL.md) と [LICENSE-FONT.md](LICENSE-FONT.md) の記述を、配布物の実態に合わせました。ROM に変わりはありません。

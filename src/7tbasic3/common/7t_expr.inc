@@ -225,13 +225,15 @@ ifl_fail:
 impl_jump_to_line:
                 JSR     exec_conv_line  ; 変換 + CURLINE_PTR/CURLIN 更新, X=作業列先頭
                 STX     CURIP
-                ; 行ジャンプでも事象の発生を見る。IF ... THEN <自行> や GOTO の
-                ;   自己ループは文の切れ目 (iep_stmt_new) を通らないため、ここが
-                ;   唯一の取り込み・分岐の機会になる。取り込みも判定も文の切れ目と
-                ;   同じ手順 (key_attn_poll → iep_jump_gate) を通し、INTERVAL と
-                ;   機能キーのどちらも同じ条件で拾う。
-                JSR     key_attn_poll   ; 機能キーの発生を取り込む (X 温存)
-                JMP     iep_jump_gate   ; X = 飛び先の文頭 (分岐すれば X はハンドラ行へ)
+                ; 行ジャンプでも事象の発生と BREAK キーを見る。IF ... THEN <自行> や
+                ;   GOTO の自己ループは文の切れ目 (iep_stmt_new) を通らないため、ここが
+                ;   唯一の取り込み・判定・分岐の機会になる。文の切れ目と同じ手順
+                ;   (iep_stmt_gate = key_attn_poll → brk_gate → iep_jump_gate) を通し、
+                ;   BREAK キーの押下 (停止位置は飛び先の文頭 = CURIP)、INTERVAL と
+                ;   機能キーのどれも同じ条件で拾う。brk_gate が行う一時文字列の開放は、
+                ;   行を跨ぐ文はどれも式の値を使い終えてからここへ来るので、文の切れ目と
+                ;   同じく安全である。
+                JMP     iep_stmt_gate   ; X = 飛び先の文頭 (分岐すれば X はハンドラ行へ)
 
 
 ;==============================================================================

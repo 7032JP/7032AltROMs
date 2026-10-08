@@ -158,11 +158,16 @@ nb_drv_lp:
                 LDB     #RDY_TRIES0
 nb_rdy_lp:
                 LBSR    nb_spinup       ; 待機 (READY 判定 1 回ぶん)
+                LBSR    nb_wait         ; 前のコマンドの完了 (BUSY = 0) を確かめてから書く
+                LDA     <FDC_CMD
+                LSRA                    ; C = BUSY
+                BCS     nb_rdy_dec      ; まだ BUSY (待ち切れ) → 書かずに出し直しへ
                 LDA     #$0A
                 STA     <FDC_CMD        ; RESTORE (Type I)
                 LBSR    nb_wait         ; BUSY 解除待ち
                 LDA     <FDC_CMD        ; Type I ステータス
                 BPL     nb_ipl_try      ; bit7=0 → READY = メディア有
+nb_rdy_dec:
                 DECB
                 BNE     nb_rdy_lp
                 BRA     nb_drv_next     ; NotReady のまま → 次ドライブ

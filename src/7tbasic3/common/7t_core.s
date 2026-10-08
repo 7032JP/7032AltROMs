@@ -463,7 +463,7 @@ rn_dbuf         EQU     str_work_buf+$D0               ; 10 進の綴り (最大
 ;     - ATTENTION は FIRQ 要因で、$FD04 の bit0 に現れる (0=あり)
 ;
 ;   分岐そのものは INTERVAL 割込と同じ仕組みに相乗りする。文の切れ目
-;   (iep_stmt_gate) と行ジャンプ直後 (iep_jump_gate) でのみ分岐し、
+;   (iep_stmt_gate) と行ジャンプ直後 (どちらも iep_stmt_gate 経由) でのみ分岐し、
 ;   GOSUB 枠を積んで登録行へ移る。ハンドラ実行中は自動保留 (intv_st bit2 を
 ;   事象ハンドラ共通の「実行中」の印として使う。RETURN が倒す) とし、
 ;   割込みの入れ子を作らない。

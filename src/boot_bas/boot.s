@@ -227,7 +227,8 @@ fr_rw:          LDB     6,X
                 BNE     fr_exit         ; ノットレディ・待ち切れ (A = エラー番号)
                 LDU     2,X             ; 入出力データエリア
                 LDA     #$A0
-                STA     <FDC_CMD
+                BSR     fdc_cmd         ; BUSY = 0 を確かめて WRITE SECTOR を書く
+                BCS     fr_timeover     ; 待ち切れ → 15
                 LDY     #DATA_WAIT_OUT  ; データ待ちの外側の繰り返し
                 ; --- DRQ ごとに 1 バイト送る。INTRQ で完了 ---
 fr_wr:          LDX     #$8000          ; 内側の繰り返し (X は退避済なので流用する)
@@ -255,6 +256,18 @@ fr_timeover:    LDA     #ERR_TIMEOVER
                 BRA     fr_exit
 
 ;------------------------------------------------------------------------------
+; fdc_cmd — FDC のコマンド (タイプ IV 以外) を書く前に BUSY = 0 を確かめる
+;   入力: A = コマンド。前のコマンドの完了 (ステータス bit0 = 0) を fdc_wait で確かめてから
+;   コマンドレジスタへ書く。待ち切れ (C = 1) のときは書かずに戻る。A 保存、B・Y 破壊。
+;------------------------------------------------------------------------------
+fdc_cmd:        PSHS    A
+                BSR     fdc_wait        ; BUSY 解除待ち (C=1 なら待ち切れ)
+                PULS    A               ; (PULS A は CC を変えない)
+                BCS     fc_ret
+                STA     <FDC_CMD
+fc_ret:         RTS
+
+;------------------------------------------------------------------------------
 ; fr_type1 — Type I コマンド (RESTORE / SEEK) を発行し、完了を待つ
 ;   入力: A = コマンド。X = RCB。U → BIOS ワークのトラックの控え。トラックレジスタは
 ;         fr_rw が控えから書き戻してある (RESTORE はトラックレジスタを使わない)。
@@ -263,9 +276,10 @@ fr_timeover:    LDA     #ERR_TIMEOVER
 ;------------------------------------------------------------------------------
 fr_type1:       LDB     4,X
                 STB     <FDC_DATA       ; $FD1B = 目標トラック (RESTORE では使われない)
-                STA     <FDC_CMD
+                BSR     fdc_cmd         ; BUSY = 0 を確かめてコマンドを書く (C=1 なら待ち切れ)
+                BCS     ft_to
                 BSR     fdc_wait        ; BUSY 解除待ち (C=1 なら待ち切れ)
-                LDA     #ERR_TIMEOVER
+ft_to:          LDA     #ERR_TIMEOVER
                 BCS     ft_ret          ; 待ち切れ → 15
                 LDB     <FDC_CMD        ; Type I ステータス
                 LDA     #ERR_NOTREADY
@@ -295,7 +309,8 @@ fr_dread:       CMPB    4,X             ; B = 控え (fr_rw で設定)。目標�
                 BNE     fr_exit         ; ノットレディ・待ち切れ (A = エラー番号)
 fr_dgo:         LDU     2,X             ; 入出力データエリア
                 LDA     #$80
-                STA     <FDC_CMD
+                BSR     fdc_cmd         ; BUSY = 0 を確かめて READ SECTOR を書く
+                BCS     fr_timeover     ; 待ち切れ → 15
                 LDY     #DATA_WAIT_OUT  ; データ待ちの外側の繰り返し
                 ; --- DRQ ごとに 1 バイト受ける。INTRQ で完了 ---
 fr_rd:          LDX     #$8000          ; 内側の繰り返し

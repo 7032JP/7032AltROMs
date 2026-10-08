@@ -10,8 +10,7 @@
 ;
 ; レイアウト:
 ;   $D800-$DFFF : 8x8 ANK フォント (2KB)
-;   $E000-$FFEF : リセット入口 + メインループ + コマンドディスパッチ、コマンドハンドラ群 (32 個)、
-;                 描画プリミティブ / フォント描画 / 共通ルーチン、割込みハンドラ
+;   $E000-$FFEF : コード (末尾はゼロ埋め)
 ;   $FFF0-$FFFF : 6809 ベクタテーブル
 ;
 ; 設計方針 (独立実装):
@@ -72,6 +71,10 @@ ED_INS          EQU     $D01B   ; 1: $04 GET の挿入モード (参考書籍。
 GE_K            EQU     $D01C   ; 1: $04 GET の終了キーコード K (参考書籍。$05 も返す)
 WK_PF_SHOW      EQU     $D020   ; 1: 機能キー行の表示指定 ($01 相対 8 = FD。非 0 で描く)
 WK_LINE_BYTES   EQU     $D023   ; 2: 1 行のバイト数 (8px 行 = 640 / 10px 行 = 800)
+        IFNDEF SUBSYS_TB
+WK_VRAM_OFS1    EQU     $D021   ; 2: もう一方の処理ページの表示開始位置の控え ($D40E/$D40F は
+                                ;    処理ページごとに独立。$22 で切り替えるとき WK_VRAM_OFS と入れ替える)
+        ENDC
 KB_COUNT        EQU     $D098   ; 1: バッファ内キー数
 KB_RDPTR        EQU     $D099   ; 2: 読出ポインタ
 KB_WRPTR        EQU     $D09B   ; 2: 書込ポインタ (FIRQ ハンドラが進める)
@@ -437,8 +440,9 @@ hook_init:
                 STA     <WK_TXT_COL             ; 文字色も白で初期化 (既定の文字属性 7)
         IFDEF   SUBSYS_AV
                 ; --- VRAM の 2 ページ (96 KB) を 0 にする (動作観察)。ALU を PSET
-                ;     (色 0、マスクなし) にして、処理ページごとに $0000-$3FFF へ
-                ;     PSHU で 8 バイトずつ書く (書いた値は ALU が捨て、3 面に色 0 が入る)
+                ;     (色 0、マスクなし) にして、処理ページごとに $0000-$3FFF を
+                ;     PULU で 4 バイトずつ読む (ALU は命令を設定した後に対象の VRAM を
+                ;     読むと演算を起こす。読んだ値は使わず、3 面に色 0 が入る)
                 LDA     #$80
                 STA     >IO_ALU_CMD             ; ALU = PSET
                 CLR     >IO_ALU_COL             ; 色 0
@@ -448,10 +452,10 @@ hook_init:
                 LDB     #$20                    ; 処理ページ 1 → 0 の順
 avc_pg:
                 STB     >IO_AV_MISC
-                LDU     #$4000
+                LDU     #0
 avc_lp:
-                PSHU    CC,A,B,DP,X,Y           ; 8 バイトずつ
-                CMPU    #0
+                PULU    X,Y                     ; 4 バイトずつダミーリード
+                CMPU    #$4000
                 BNE     avc_lp
                 SUBB    #$20
                 BCC     avc_pg                  ; $20 → 0 → (借り) 終わり
@@ -3274,6 +3278,7 @@ pt_match:
                 ADDB    <PT_BC
                 ADCA    #0
                 TFR     D,U                     ; U = 面の中のバイト位置
+                JSR     av_wait                 ; 補間の完了を待ってから ALU を書く
                 LDA     #$87
                 STA     >IO_ALU_CMD             ; ALU = 比較
                 LDA     ,U
@@ -3290,6 +3295,7 @@ pt_match:
                 ADDB    <PT_BC
                 ADCA    #0
                 TFR     D,U                     ; U = 面の中のバイト位置
+                JSR     av_wait                 ; 補間の完了を待ってから ALU を書く
                 LDA     #$87
                 STA     >IO_ALU_CMD             ; ALU = 比較
                 CLR     <PT_HIT
@@ -7213,6 +7219,7 @@ IO_LD_BASE      EQU     $D420   ; ラインドロワ: オフセット / 線種 /
 IO_AV_MISC      EQU     $D430   ; 書 = bit6 表示ページ / bit5 処理ページ、読 = bit4 ラインドロワの空き / bit2 VSYNC
 AV_MISC         EQU     $D0E7   ; 1: $D430 へ書く値の控え ($22 が更新する)
 AV_PG0          EQU     $D0E8   ; 1: 描画中に $D430 へ書く値 (bit1 を立てる。Type-B の位置は控えの bit5 も落とし、640×200 は $22 の処理ページのまま描く)
+                                ;    bit1・bit0 は $D800 に出す CG のバンクの選択
 AV_ALU          EQU     $D0E9   ; 1: 線を引くときの $D410 の値
 AV_STY          EQU     $D0EA   ; 2: 線種 ($D422-$D423)
 AV_COL          EQU     $D0EC   ; 4: 4 回ぶんの $D411 の値 (色のビット 3 → 0 の順)
@@ -7327,7 +7334,9 @@ afl_end:
 ;   色 AV_COL (4 回ぶん)、線種 AV_STY、$D410 に AV_ALU。回ごとに処理ページ
 ;   ($D430 bit5: 1・2 回目 0 / 3・4 回目 1) とオフセット ($D420: 1・3 回目 $00 /
 ;   2・4 回目 $10) を替える。線種と端点は 1 回だけ書き、回ごとに $D42B へ Y1 の下位を
-;   書き直して引く。書く前と引く前にラインドロワの空き ($D430 読みの bit4) を待つ。
+;   書き直して引く。書く前・引く前・引いた後にラインドロワの空き ($D430 読みの bit4) を
+;   待つ (av_wait)。Type-A の位置は 1 回だけ引くので、回ごとの処理ページとオフセットの
+;   選択は持たない (AV_PG0 のまま、オフセット 0)。
 ;   avd_nc は切り取りを済ませた線を引く入口 (塗りの区間・矩形の辺と塗り)。
 ;   X/Y/U 保存、A/B 破壊。
 avd_line:
@@ -7339,10 +7348,7 @@ avd_nc:
                 PSHS    X,Y,U
 adl_go:
                 LDX     #IO_LD_BASE             ; X = $D420
-adl_w0:
-                LDA     16,X                    ; $D430 bit4 = 1 (空き) を待ってから書く
-                BITA    #$10
-                BEQ     adl_w0
+                BSR     av_wait                 ; 補間の完了を待ってから書く
                 LDA     <AV_ALU
                 STA     -16,X                   ; $D410
                 LDD     <AV_STY
@@ -7355,11 +7361,10 @@ adl_w0:
                 STD     8,X
                 LDA     <WK_LN_Y1
                 STA     10,X                    ; Y1 の上位
+        IFDEF SUBSYS_TB
                 LDU     #AV_COL
 adl_lp:
-                LDA     16,X                    ; 空きを待つ
-                BITA    #$10
-                BEQ     adl_lp
+                BSR     av_wait                 ; 前の回の完了を待つ
                 TFR     U,D
                 SUBB    #AV_COL&$FF             ; B = 何回目か (0〜3)
                 LDA     <AV_PG0
@@ -7381,7 +7386,33 @@ adl_of:
                 STA     11,X                    ; $D42B の書込みで引く
                 CMPU    #AV_COL+AV_NP
                 BCS     adl_lp
+        ELSE
+                LDA     <AV_PG0
+                STA     16,X                    ; $D430 (1 回だけ引く)
+                CLRA
+                CLRB
+                STD     ,X                      ; $D420-$D421 = オフセット 0
+                LDA     <AV_COL
+                STA     -15,X                   ; $D411 = 色
+                LDA     <WK_LN_Y1+1
+                STA     11,X                    ; $D42B の書込みで引く
+        ENDC
+                BSR     av_wait                 ; 最後の補間の完了を待つ (続く処理が VRAM 系レジスタを書く)
                 PULS    X,Y,U,PC
+
+;--- av_wait — 直線補間の完了 ($D430 読みの bit4 = 1) を待つ -------------------------
+;   待ちは $2000 周を上限とし、上限に達したらそのまま戻る。A 破壊、X 保存。
+av_wait:
+                PSHS    X
+                LDX     #$2000
+avw_lp:
+                LDA     >IO_AV_MISC
+                BITA    #$10
+                BNE     avw_ok
+                LEAX    -1,X
+                BNE     avw_lp
+avw_ok:
+                PULS    X,PC
 
 ;--- av_seg — 辺 1 本 (WK_LN_*、水平か垂直) を引く ----------------------------------
 ;   動かない方の座標が描画範囲の外なら引かない。動く方の座標は描画範囲に丸める。
@@ -7551,8 +7582,10 @@ acl_lp:
         ENDC
 
 ;--- av_end — FM77AV の LINE / PAINT / $39 の共通の出口 ---------------------------
-;   $D430 を控えの値に戻し、ALU を止める (他の命令は ALU を使わずに VRAM へ書く)。
+;   補間の完了を待ってから $D430 を控えの値に戻し、ALU を止める (他の命令は ALU を
+;   使わずに VRAM へ書く)。
 av_end:
+                LBSR    av_wait
                 LDA     <AV_MISC
                 STA     >IO_AV_MISC
                 CLR     >IO_ALU_CMD
@@ -7580,6 +7613,18 @@ av_begin:
                 STA     <AV_ALU
                 LDD     #$FFFF
                 STD     <AV_STY
+                RTS
+
+;--- av_view_full — 描画範囲を画面全体にする (リセット時と $39 の枠・塗りの前) ---------
+av_view_full:
+                CLRA
+                CLRB
+                STD     <WK_VIEW_X0
+                STD     <WK_VIEW_Y0
+                LDD     #AV_XMAX
+                STD     <WK_VIEW_X1
+                LDD     #199
+                STD     <WK_VIEW_Y1
                 RTS
 
 ;--- c39_entry — $39 描画範囲の設定と枠付きの矩形の塗り ------------------------------
@@ -7633,6 +7678,8 @@ c39_rect:
 ;   bit1: $D430 bit5 (処理ページ) ← P1 の bit0 を書く。bit2: VSYNC ($D430 読みの
 ;   bit2 = 1) を待って $D430 bit6 (表示ページ) ← P2 の bit0 を書く。bit0: $D430
 ;   bit0 ← P0 の bit0。最後に控えを $D430 へ書く。控えの初期値は 0。
+;   処理ページが変わったときは、表示開始位置の控え (WK_VRAM_OFS) をそのページのものに
+;   入れ替える ($D40E/$D40F は処理ページごとに独立。Type-A の位置)。
 c22_entry:
                 LDX     #IO_AV_MISC
                 LDB     <AV_MISC
@@ -7670,20 +7717,21 @@ c22_b0:
                 LSRA
                 ADCB    #0
 c22_end:
+        IFNDEF SUBSYS_TB
+                TFR     B,A
+                EORA    <AV_MISC                ; A = 変わるビット
+        ENDC
                 STB     <AV_MISC
                 STB     ,X
-                RTS
-
-;--- av_view_full — 描画範囲を画面全体にする (リセット時と $39 の枠・塗りの前) ---------
-av_view_full:
-                CLRA
-                CLRB
-                STD     <WK_VIEW_X0
-                STD     <WK_VIEW_Y0
-                LDD     #AV_XMAX
-                STD     <WK_VIEW_X1
-                LDD     #199
-                STD     <WK_VIEW_Y1
+        IFNDEF SUBSYS_TB
+                BITA    #$20
+                BEQ     c22_rts                 ; 処理ページは変わらない
+                LDD     <WK_VRAM_OFS            ; 表示開始位置の控えをそのページのものに
+                LDX     <WK_VRAM_OFS1           ;   入れ替える
+                STX     <WK_VRAM_OFS
+                STD     <WK_VRAM_OFS1
+c22_rts:
+        ENDC
                 RTS
 
 ;--- av_clip — WK_LN_* の直線を描画範囲 WK_VIEW_* で切り取る (動作観察) -------------------

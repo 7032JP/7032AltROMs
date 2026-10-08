@@ -156,9 +156,8 @@ iep_stmt_gate:
                 JSR     brk_gate        ; 本務を先に (D 破壊, X 温存)
                 ; 分岐判定へ落ちる (X = 文の先頭)
 ; iep_jump_gate — INTERVAL 発生時の分岐判定と GOSUB 突入
-;   入口は 2 つ:
-;     - iep_stmt_gate (上): 文の切れ目。X = これから実行する文の先頭
-;     - impl_jump_to_line (7t_expr.inc): 行ジャンプ直後。X = 飛び先の文頭
+;   入口は iep_stmt_gate (上) から落ちて来る 1 つ。文の切れ目 (iep_stmt_new)
+;   と行ジャンプ直後 (impl_jump_to_line、7t_expr.inc) の両方がここを通る
 ;   いずれも「X の文を実行する直前」であり、分岐時は X を復帰 IP として
 ;   GOSUB フレームを積み、登録行へ制御を移す (RETURN で X の文からやり直す)。
 ;   分岐しないときは X を温存して RTS (str_tmp_clear と同じ呼出契約)。
@@ -601,6 +600,7 @@ disk_fdc_ready:
                 ORA     #$80            ; bit7 = モータ ON
                 STA     FDC_DRV         ; 指定ドライブ + モータ ON
                 CLR     FDC_SIDE        ; サイド 0
+                BSR     if_fdc_wait     ; 前のコマンドの完了 (BUSY = 0) を確かめてから書く
                 LDA     #$03            ; RESTORE (トラック 0 へ復帰)
                 STA     FDC_STAT
                 BSR     if_fdc_wait     ; BUSY 解除まで待つ

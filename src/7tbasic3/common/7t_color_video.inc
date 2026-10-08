@@ -439,7 +439,7 @@ fgs_cp:
                 CLR     PORT_SUBCPU
                 LDA     ,X
                 CMPA    #17             ; SUBIN?
-                LBNE    fco_bwd_cb      ; SUBOUT: 待たずに復帰 (fire-and-forget)
+                BNE     fco_bwd_cb      ; SUBOUT: 待たずに復帰 (fire-and-forget)
                 ; --- SUBIN: 処理の終了 (BUSY → 0) を待って HALT し、応答を写す ---
                 BSR     gfx_halt
                 LDB     7,X             ; RCBBMH (入力バイト数) の下位
