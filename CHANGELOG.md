@@ -1,9 +1,14 @@
 # 更新履歴
 
+## v1.0.10 — 2026-11-04
+
+- [docs/LEGAL.md](docs/LEGAL.md) と [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) の記述を改め、字形の設計とスクリプトの内部についての説明を外しました。
+- 各文書とソースの注釈で、FM77AV のメイン CPU の ROM の呼び名を「イニシエータ ROM」に揃えました。ROM に変わりはありません。
+
 ## v1.0.9 — 2026-10-08
 
 - BASIC ROM（`7tbasic3`）で、`10 GOTO 10` のように行の最初の文が行ジャンプになっているループが、BREAK キーで止まらなかった点を直しました。
-- サブシステム ROM（`subsys_a` / `subsys_b`）、起動 ROM（`boot_bas` / `boot_dos`）、イニシエート ROM、BASIC ROM のディスクの読み書きで、ハードウェアの手順 (描画の完了待ち、FDC の BUSY の確認など) を定めに合わせました。
+- サブシステム ROM（`subsys_a` / `subsys_b`）、起動 ROM（`boot_bas` / `boot_dos`）、イニシエータ ROM、BASIC ROM のディスクの読み書きで、ハードウェアの手順 (描画の完了待ち、FDC の BUSY の確認など) を定めに合わせました。
 
 ## v1.0.8 — 2026-10-07
 
@@ -28,7 +33,7 @@
 - BASIC ROM の機械語 I/O サービス（OUTPUT / INPUT / INPUTC / KEYIN / SUBIN）が、サブシステムのエラーを RCBSTA とキャリーで返すようにしました。
 - BASIC ROM の `BEEP` / `PLAY` が音源のミキサに書く値の上位 2 ビットを、定めの値に改めました。
 - BASIC ROM の `CLS` が、サブシステムを Type-B に切り替えた後も、消去の後の地を背景色にするようにしました。
-- FM77AV 用のイニシエート ROM（`initav1`）で、起動イメージ（BASIC / DOS）をモード選択スイッチだけで選ぶようにし、初期化の順と、起動イメージへ移る処理を改めました。
+- FM77AV 用のイニシエータ ROM（`initav1`）で、起動イメージ（BASIC / DOS）をモード選択スイッチだけで選ぶようにし、初期化の順と、起動イメージへ移る処理を改めました。
 - FM77AV 系のディスクからの起動で、ヘッドを戻した後に 20 ms 以上待ってから読むようにしました（`initav1` / `initbase` / `initiate` / `initex`）。
 - [LICENSE](LICENSE) ほか 2 文書で、パブリックドメインの対象を、同梱フォントのうち該当する字形の範囲に限る表記に改めました。権利区分に変わりはありません。
 

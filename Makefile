@@ -14,7 +14,7 @@
 #     boot_dos.rom :   512 B  ($FE00-$FFFF   ディスク起動ブート)
 #     subsys_c.rom : 10240 B  ($D800-$FFFF   サブシステム。先頭 2KB は ANK フォント)
 #   FM77AV 系:
-#     initiate.rom :  8192 B  (メイン CPU $6000-$7FFF イニシエート、上位世代向け)
+#     initiate.rom :  8192 B  (メイン CPU $6000-$7FFF イニシエータ、上位世代向け)
 #     initbase.rom :  8192 B  (同上の中位世代 (20 系) 向け変種。機種識別域のみ相違)
 #     initav1.rom  :  8192 B  (同上の第 1 世代向け変種。AV ブートイメージ機構を持たない)
 #     initex.rom   :  8192 B  (同上の拡張世代 (EX/SX 系) 向け変種。機種識別域のみ相違)
@@ -240,20 +240,20 @@ $(BUILD)/boot_init.rom: $(SRC)/boot_init/boot.s | $(BUILD)
 $(BUILD)/avboot.bin: $(SRC)/initiate/avboot.s | $(BUILD)
 	$(AS) -fraw -o $@ -l$(BUILD)/avboot.lst $(SRC)/initiate/avboot.s
 
-# --- FM77AV: initiate.rom (メイン CPU イニシエート ROM) ---
+# --- FM77AV: initiate.rom (メイン CPU イニシエータ ROM) ---
 #   boot_bas.rom / boot_init.rom / avboot.bin (中間生成物) を INCLUDEBIN で
 #   取り込むため依存に含める。
 $(BUILD)/initiate.rom: $(SRC)/initiate/initiate.s $(BUILD)/boot_bas.rom $(BUILD)/boot_init.rom $(BUILD)/avboot.bin | $(BUILD)
 	$(AS) -fraw -o $@ -l$(BUILD)/initiate.lst -I$(BUILD) $(SRC)/initiate/initiate.s
 
-# --- FM77AV (中位世代/20 系): initbase.rom (イニシエート ROM の機種別変種) ---
+# --- FM77AV (中位世代/20 系): initbase.rom (イニシエータ ROM の機種別変種) ---
 #   src/initiate/initiate.s を INIT_BASE 条件でアセンブルした変種。機種識別域
 #   (file offset $0B09-$0B13) の提示内容だけが initiate.rom と異なる。
 #   高色数モードを持たない構成へは本 ROM を initiate.rom として配置する。
 $(BUILD)/initbase.rom: $(SRC)/initbase/initbase.s $(SRC)/initiate/initiate.s $(BUILD)/boot_bas.rom $(BUILD)/boot_init.rom $(BUILD)/avboot.bin | $(BUILD)
 	$(AS) -fraw -o $@ -l$(BUILD)/initbase.lst -I$(BUILD) $(SRC)/initbase/initbase.s
 
-# --- FM77AV (第 1 世代): initav1.rom (イニシエート ROM の機種別変種) ---
+# --- FM77AV (第 1 世代): initav1.rom (イニシエータ ROM の機種別変種) ---
 #   src/initiate/initiate.s を INIT_AV1 条件でアセンブルした変種。AV ブートイメージ
 #   (file offset $1C00) の機構をそもそも持たない世代の構成で、
 #   起動用 ROM イメージを resident boot 領域へ複写してその場で実行する。
@@ -261,7 +261,7 @@ $(BUILD)/initbase.rom: $(SRC)/initbase/initbase.s $(SRC)/initiate/initiate.s $(B
 $(BUILD)/initav1.rom: $(SRC)/initav1/initav1.s $(SRC)/initiate/initiate.s $(BUILD)/boot_bas.rom $(BUILD)/boot_init.rom | $(BUILD)
 	$(AS) -fraw -o $@ -l$(BUILD)/initav1.lst -I$(BUILD) $(SRC)/initav1/initav1.s
 
-# --- FM77AV (拡張世代/EX・SX 系): initex.rom (イニシエート ROM の機種別変種) ---
+# --- FM77AV (拡張世代/EX・SX 系): initex.rom (イニシエータ ROM の機種別変種) ---
 #   src/initiate/initiate.s を INIT_EXSX 条件でアセンブルした変種。機種識別域の
 #   中身 (世代名と拡張世代の識別値) だけが initiate.rom と異なる。8192 B のままであり
 #   16 KB 化は行わない。

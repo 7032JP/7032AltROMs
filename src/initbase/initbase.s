@@ -1,9 +1,9 @@
 ; SPDX-License-Identifier: MIT
 ; Copyright (c) 2026 Naomitsu.Tsugiiwa
 ;==============================================================================
-; AltROMs initbase.rom — FM77AV 中位世代 (20 系) メイン CPU イニシエート ROM
+; AltROMs initbase.rom — FM77AV 中位世代 (20 系) メイン CPU イニシエータ ROM
 ;
-; 8192 byte 固定。initiate.rom と同じメイン CPU イニシエート ROM だが、機種識別域
+; 8192 byte 固定。initiate.rom と同じメイン CPU イニシエータ ROM だが、機種識別域
 ; (file offset $0B09-$0B13) の提示内容だけが異なる機種別変種である。
 ;
 ;   initiate.rom : 世代 "AV040" / 機種区分 "40" → 拡張表示モード (26 万色) を備える世代

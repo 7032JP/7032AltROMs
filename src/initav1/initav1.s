@@ -1,9 +1,9 @@
 ; SPDX-License-Identifier: MIT
 ; Copyright (c) 2026 Naomitsu.Tsugiiwa
 ;==============================================================================
-; AltROMs initav1.rom — FM77AV 第 1 世代 メイン CPU イニシエート ROM
+; AltROMs initav1.rom — FM77AV 第 1 世代 メイン CPU イニシエータ ROM
 ;
-; 8192 byte 固定。initiate.rom / initbase.rom と同じメイン CPU イニシエート ROM
+; 8192 byte 固定。initiate.rom / initbase.rom と同じメイン CPU イニシエータ ROM
 ; だが、**起動機構そのものが異なる世代** 向けの変種である。
 ;
 ; 本変種の構成差 (initiate.rom との差):

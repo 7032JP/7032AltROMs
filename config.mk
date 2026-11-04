@@ -33,7 +33,7 @@ SCRIPTS = scripts
 #   配布物のバージョンは独立して採番する。
 #   7T-BASIC のバージョンは 3.1 のままで、こことは連動しない (src/7tbasic3/ 側が持つ)。
 #   公開時のタグ名は "v$(DIST_VERSION)" を想定する。
-DIST_VERSION = 1.0.9
+DIST_VERSION = 1.0.10
 
 # 第三者のビットマップフォント (パブリックドメイン宣言つき) の同梱先
 #   16x16 漢字フォント ROM の字形の入力に用います (docs/LEGAL.md §9)。
@@ -45,7 +45,7 @@ FONTS = fonts
 #     boot_dos : ディスク起動ブート ROM               (512 B)
 #     subsys_c : サブシステム ROM                     (10240 B)
 #   FM77AV 系:
-#     initiate : メイン CPU イニシエート ROM (上位世代) (8192 B)
+#     initiate : メイン CPU イニシエータ ROM (上位世代) (8192 B)
 #     initbase : 同上の中位世代 (20 系) 向け変種       (8192 B)
 #     initav1  : 同上の第 1 世代向け変種               (8192 B)
 #     initex   : 同上の拡張世代 (EX/SX 系) 向け変種    (8192 B)

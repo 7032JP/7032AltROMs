@@ -68,7 +68,7 @@ make
 | `make verify-fonts` | `build/font.bin` / `build/font16.bin` のハッシュを [`fonts/SHA256SUMS`](../fonts/SHA256SUMS) と照合し、非ゼロ符号位置の集合を [LEGAL.md](LEGAL.md) §8.1 の 2 表と照合する（`verify-release` から自動で呼ばれる） |
 | `make verify-kanji` | 同梱の入力 BDF とライセンス文のハッシュを [`fonts/SHA256SUMS`](../fonts/SHA256SUMS) と、`build/kanji.rom` / `build/kanji2.rom` のハッシュを [SHA256SUMS](../SHA256SUMS) と照合し、独自字形 107 符号位置の到達先の枠と内容を全数照合する（`verify-release` から自動で呼ばれる） |
 | `make deploy-roms` | 保守用。全再ビルドののち `build/` の産物を `roms/` へ複写し、`SHA256SUMS` を作り直す（`make` の後に `bash scripts/copy_roms.sh` を実行しても同じ） |
-| `make version` | 配布物のバージョン（`v1.0.9`）と 7T-BASIC のバージョン（`3.1`）を表示する |
+| `make version` | 配布物のバージョン（`v1.0.10`）と 7T-BASIC のバージョン（`3.1`）を表示する |
 | `make check-build-path` | 外部から与えた `BUILD` の値が削除してよいパスかを検査する（`make clean` から自動で呼ばれる） |
 | `make check-build-guard` | 外部入力 `BUILD` の安全ガードを負例で検査する（ROM は作らない。検査の詳細は Makefile のコメントに記載） |
 | `make clean` | `build/` をまるごと削除する |
@@ -159,10 +159,10 @@ python3 scripts/strip_bdf_chars.py <配布物>/bdf/shnmk16.bdf \
 | `boot_bas/` | FM-7 系 | BASIC モード起動ブート ROM のソース（`boot.s`） |
 | `boot_dos/` | FM-7 系 | ディスク起動ブート ROM のソース（`boot.s`） |
 | `subsys_c/` | FM-7 系／FM77AV 系（FM-7 互換モード） | サブシステム ROM のソース（`subsys.s`） |
-| `initiate/` | FM77AV 系 | メイン CPU イニシエート ROM のソース（`initiate.s`） |
-| `initbase/` | FM77AV20 系 | イニシエート ROM の機種別変種のソース（`initbase.s`。`initiate.s` を条件アセンブル） |
-| `initav1/` | FM77AV 基本機（第 1 世代） | イニシエート ROM の機種別変種のソース（`initav1.s`。`initiate.s` を条件アセンブル） |
-| `initex/` | FM77AV20EX / AV40EX / AV40SX | イニシエート ROM の機種別変種のソース（`initex.s`。`initiate.s` を条件アセンブル） |
+| `initiate/` | FM77AV 系 | メイン CPU イニシエータ ROM のソース（`initiate.s`） |
+| `initbase/` | FM77AV20 系 | イニシエータ ROM の機種別変種のソース（`initbase.s`。`initiate.s` を条件アセンブル） |
+| `initav1/` | FM77AV 基本機（第 1 世代） | イニシエータ ROM の機種別変種のソース（`initav1.s`。`initiate.s` を条件アセンブル） |
+| `initex/` | FM77AV20EX / AV40EX / AV40SX | イニシエータ ROM の機種別変種のソース（`initex.s`。`initiate.s` を条件アセンブル） |
 | `boot_init/` | FM77AV 系 | initiate に埋め込む resident boot イメージのソース（`boot.s`、中間生成物） |
 | `subsys_a/` | FM77AV 系 | Type-A の位置に置くサブシステム ROM のソース（`subsys_a.s`。中身は subsys_c と共通） |
 | `subsys_b/` | FM77AV 系 | Type-B の位置に置くサブシステム ROM のソース（`subsys_b.s`。コマンド処理の本体は subsys_a と共通だが、320×200／4096 色のアナログモードで描く） |
@@ -184,10 +184,10 @@ python3 scripts/strip_bdf_chars.py <配布物>/bdf/shnmk16.bdf \
 
 **boot_init** — FM77AV 系のディスク起動時に `$FE00-$FFFF` に常駐する resident boot イメージのソースです。ディスク BIOS（トラック 0 への復帰・セクタ書込み・セクタ読出し）を提供します。固定エントリポイントは先頭の `$FE02` / `$FE05` / `$FE08` です（§5.2）。ドライブ 0 のトラック 0 セクタ 1 を `$0100` へ読み、`Y` = `$0500`・DP = 0 で `$0100` へ渡します。
 
-- サイズは 512 B で、単独では配布しません。イニシエート ROM へ `INCLUDEBIN` で取り込む中間生成物です。
+- サイズは 512 B で、単独では配布しません。イニシエータ ROM へ `INCLUDEBIN` で取り込む中間生成物です。
 - ソース本体は `boot.s`。生成物は `build/boot_init.rom`。
 
-**initiate（と initbase / initav1 / initex）** — FM77AV 系のメイン CPU 側で、電源 ON / リセット直後に最初に実行されるイニシエート ROM のソースです。サウンド・アナログパレット・メモリマッピングレジスタ（MMR）を初期化し、機種ごとの制御レジスタを起動時に設定して、BASIC 起動かディスク起動かを判定して制御を移します。ディスク起動の対象ドライブは機種世代で異なります（[SETUP.md](SETUP.md) §2.5）。
+**initiate（と initbase / initav1 / initex）** — FM77AV 系のメイン CPU 側で、電源 ON / リセット直後に最初に実行されるイニシエータ ROM のソースです。サウンド・アナログパレット・メモリマッピングレジスタ（MMR）を初期化し、機種ごとの制御レジスタを起動時に設定して、BASIC 起動かディスク起動かを判定して制御を移します。ディスク起動の対象ドライブは機種世代で異なります（[SETUP.md](SETUP.md) §2.5）。
 
 - サイズは 8192 B で、メイン CPU の `$6000-$7FFF` にオーバレイされます。イメージ内の配置は §5.5 にあります。
 - ソース本体は `initiate.s`。機種別変種 `initbase` / `initav1` / `initex` は同じソースの条件アセンブルです。
@@ -286,7 +286,7 @@ python3 scripts/strip_bdf_chars.py <配布物>/bdf/shnmk16.bdf \
 
 `subsys_a`（Type-A の位置）と `subsys_b`（Type-B の位置）は、FM-7 系の `subsys_c` が応答するコマンドに加えて、FM77AV の `$22`（表示ページ・処理ページの選択）・`$39`（枠付きの矩形の塗り）・`$45`（キーエンコーダ命令）・`$7F`（共有 RAM の相対 3 からの処理の実行）に応答します（一覧は §6.2。各 ROM の役割は [SETUP.md](SETUP.md) §2.4）。`subsys_b` は `$1B` を受け付けません。一覧に無いコマンドコード（Type-A の `$24`、Type-B の `$14` 等）は受理し、エラーコード `$46` を返して何もしません。
 
-### 5.5 イニシエート ROM のイメージ構成
+### 5.5 イニシエータ ROM のイメージ構成
 
 `initiate` / `initbase` / `initav1` / `initex` は同じ枠の機種別変種です（違いと使う機種は [SETUP.md](SETUP.md) §2.5）。位置はファイル先頭からのオフセットです。
 
@@ -305,7 +305,7 @@ python3 scripts/strip_bdf_chars.py <配布物>/bdf/shnmk16.bdf \
 | 位置 | 長さ | 内容 |
 | --- | ---: | --- |
 | `$0B00` | 6 B | 識別子 `ALTROM` |
-| `$0B06` | 3 B | イニシエート ROM のバージョン `110`（`1.10`） |
+| `$0B06` | 3 B | イニシエータ ROM のバージョン `110`（`1.10`） |
 | `$0B09` | 5 B | 世代表示 |
 | `$0B0E` | 2 B | 機種区分（持たない世代は `$FF`） |
 | `$0B10` | 1 B | 拡張世代の識別値（`initex` は `'1'`、他は `$00`。機種区分を持たない世代は `$FF`） |

@@ -1,10 +1,10 @@
 ; SPDX-License-Identifier: MIT
 ; Copyright (c) 2026 Naomitsu.Tsugiiwa
 ;==============================================================================
-; AltROMs initex.rom — FM77AV 拡張世代 (EX / SX 系) メイン CPU イニシエート ROM
+; AltROMs initex.rom — FM77AV 拡張世代 (EX / SX 系) メイン CPU イニシエータ ROM
 ;
 ; 8192 byte 固定。initiate.rom / initbase.rom / initav1.rom と同じメイン CPU
-; イニシエート ROM の機種別変種である。
+; イニシエータ ROM の機種別変種である。
 ;
 ; 本変種の構成差 (initiate.rom との差) は機種識別域の中身だけ (世代名 "AV4EX" と
 ; 拡張世代の識別値。initiate.s の機種識別域の項を参照)。
