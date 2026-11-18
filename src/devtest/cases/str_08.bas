@@ -1,0 +1,8 @@
+0 REM AltROMs test (MIT)
+1 REM ASC: 空文字列は Illegal Function Call (誤り 5)。定数でも変数でも同じ。
+10 ON ERROR GOTO 100
+20 PRINT ASC("")
+30 A$="":PRINT ASC(A$)
+40 PRINT ASC("A");ASC(MID$("ABC",2))
+50 PRINT "END":END
+100 PRINT "ERR";ERR;"ERL";ERL:RESUME NEXT

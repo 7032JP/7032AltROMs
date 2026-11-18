@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 FOR I=1 TO 5
 20 IF I MOD 2=0 THEN PRINT I;"EVEN" ELSE PRINT I;"ODD"
 30 NEXT

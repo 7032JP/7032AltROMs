@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 A#=1.5
 20 A%=123
 30 A!=2.5

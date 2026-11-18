@@ -33,12 +33,11 @@ ppb_lp:
                 JMP     fpow_sgn
 ppb_tor:
                 JSR     fx_ld1_x
-                ; 合成経路 (本体は別プール) (ここへ展開)
+                ; 合成経路
 ; ppb_real — べき乗の合成経路 (指数が整数でない / 底が正の実数のとき)。
 ;   FAC1 = |底| で入り、EXP(指数 * LOG(|底|)) を組んで符号処理へ落とす。
-;   (置き場所は容量の都合。参照はラベル経由のみで位置依存はない)
 ppb_real:
-                JSR     flog_core       ; FAC1 = LOG(|底|) (>0 保証済)
+                JSR     flog_core       ; FAC1 = LOG(|底|) (|底| > 0 は保証済)
                 LDX     #fsc_u
                 JSR     fx_ld2mul       ; FAC1 = 指数*LOG(|底|)
                 JSR     fexp_core       ; FAC1 = EXP(同上)

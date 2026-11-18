@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 INPUT A$,B$
 20 PRINT "[";A$;"][";B$;"]";LEN(A$);LEN(B$)
 30 INPUT C,D

@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM PRINT USING の数値フィールドの桁位置 # は 24 個まで。25 個以上は
 2 REM 誤り 5 (Illegal Function Call) になる。
 10 ON ERROR GOTO 900

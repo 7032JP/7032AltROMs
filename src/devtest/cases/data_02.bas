@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 FOR I=1 TO 3
 20 READ N$,V
 30 PRINT N$;"=";V

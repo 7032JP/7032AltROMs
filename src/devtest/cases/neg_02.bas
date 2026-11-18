@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 A$="ABC
 20 PRINT "[";A$;"]"
 30 DATA "XY

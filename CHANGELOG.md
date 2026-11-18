@@ -1,5 +1,16 @@
 # 更新履歴
 
+## v1.0.11 — 2026-11-18
+
+- BASIC ROM（`7tbasic3`）で、DEF FN、VAL、数値の表示、AND、ASC、INPUT$、RIGHT$、DATE$、ERL、PRINT、PLAY、WHILE の動作を直しました。同じ名前の関数の再定義は Duplicate Definition になり、文字列定数の引数は正しく渡ります。AND は 2 つ以上つなげます。
+- BASIC ROM で、テープへの SAVEM と、動作クロック 1.2 MHz でのテープの読み込みを直しました。
+- BASIC ROM の PF6・PF9 の既定値を改めました。
+- サブシステム ROM（`subsys_a` / `subsys_b` / `subsys_c`）で、文字で引く LINE の線の形、GCURSOR の数字キー、PAINT の塗り残しを直しました。PAINT は速くなりました。
+- BASIC ROM とサブシステム ROM で、PF キーの割込み（ON KEY(n) GOSUB）を、キーを押す時期によって取りこぼすことがあった点を直しました。
+- BASIC ROM で、`&` に続けて書いた 8 進の数（`&17` など）の最初の桁を読み落としていた点を直しました。プログラムの中の定数、VAL、DATA のどれでも `&O` を付けたときと同じ値になります。
+- BASIC ROM の `VAL("&")` は 0 を返すようにしました（`&` の後に 8 進の数字が無いため）。
+- 漢字 ROM の記号 7 字（… ‥ − ¬ ＝ ≠ ≡）の字形を直しました。
+
 ## v1.0.10 — 2026-11-04
 
 - [docs/LEGAL.md](docs/LEGAL.md) と [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) の記述を改め、字形の設計とスクリプトの内部についての説明を外しました。

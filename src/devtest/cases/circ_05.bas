@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM CIRCLE の機能 (第 8 引数)。PSET / PRESET / AND / OR / XOR を指定でき、
 2 REM 省略したときは PSET とみなす。塗りつぶし (F) を指定したときも、線を引く
 3 REM ときに機能が効く。中心を通る 1 行の点灯数を POINT で数え、PRESET を

@@ -1,6 +1,6 @@
-0 REM AltROMs test - MIT, own work.
-1 REM 画面比較: GET@/PUT@ の図形形式 (G 指定)。1 面 (形式 3) の PSET / OR /
-2 REM XOR による書き戻しと、3 面 (形式 4、@A) の色つき復元。
+0 REM AltROMs test (MIT)
+1 REM 画面比較: GET@/PUT@ の図形形式 (G 指定)。1 面の PSET / OR /
+2 REM XOR による書き戻しと、3 面 (@A つき) の色つき復元。
 10 CLS
 20 DIM P%(100):DIM Q%(200)
 30 LINE (0,180)-(15,187),PSET,5,BF

@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM VARPTR は変数・配列要素の格納アドレスを返す。値は実行環境で
 2 REM 変わるので、要素間の間隔 (整数 2 / 単精度 4 / 倍精度 8 バイト) と、
 3 REM 整数の格納 (上位・下位の並び) という性質を照合する (真 = -1)。

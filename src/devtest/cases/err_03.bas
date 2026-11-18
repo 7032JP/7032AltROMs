@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM 実行時エラーの番号: 1 Next Without For / 3 Return Without Gosub /
 2 REM 4 Out Of Data / 8 Undefined Line Number / 11 Division By Zero /
 3 REM 18 Undefined User Function / 25 Wend Without While /

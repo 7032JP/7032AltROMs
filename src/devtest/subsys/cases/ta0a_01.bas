@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM GENERATED FROM ta0a_01.s BY scripts/gen_subsys_tests.py
 10 CLEAR 512,&H5FFF
 18 CLS

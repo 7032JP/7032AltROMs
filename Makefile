@@ -4,7 +4,7 @@
 # Makefile — 代替 ROM 群のビルド
 #
 # `make` で配布 ROM 15 本を build/ 配下に生成します。
-# ツールチェイン名・出力先・対象 ROM は config.mk 側で設定します。
+# ツールチェイン名・対象 ROM は config.mk 側で設定します。
 #
 # 内訳は、MIT ライセンス・ソース公開の代替 ROM 12 本 (config.mk の TARGETS) と、
 # データ ROM 3 本 (同 DATA_TARGETS) です。
@@ -33,22 +33,14 @@
 include config.mk
 
 # --- BUILD の外部上書き禁止 (最優先・すべての参照より前) ---
-#   出力先・削除先である BUILD を外部 (コマンドライン / 環境変数) から上書きできると、
-#   次の危険が生じる:
-#     - 値に $(shell ...) を仕込むと、make の変数展開段階で任意コマンドが実行される。
-#     - 値にバッククォート・; & | 等を仕込むと、$(BUILD) を使うレシピのシェルで実行される。
-#     - 空値なら $(BUILD)/foo が /foo となりルート直下へ出力・削除する。
-#     - .git や src / roms 等の既存ディレクトリを指せば、clean が追跡内容を削除し得る。
-#   これらはいずれも「BUILD を外部から差し替えられる」ことに起因する。そこで出力先は
-#   config.mk (リポジトリ内・信頼できる設定ファイル、origin=file) でのみ設定可とし、
-#   コマンドライン・環境変数からの上書きは、最初の参照より前に一律で拒否する。
-#   config.mk を編集すれば出力先を変えられる。通常の `make` は
-#   BUILD を指定しないため影響を受けない。
-#   本ブロックは config.mk の直後・BUILD のどの参照 (target-specific := を含む)
-#   よりも前に置く。target-specific := は解釈時に全ターゲット分が展開されるため、
-#   ここより後ろに置くと素通りする。
+#   BUILD は config.mk でのみ設定する。コマンドライン・環境変数からの上書きは拒否する:
+#     - 値に $(shell ...) やシェルの記号を入れると、コマンドが実行される。
+#     - 空値なら $(BUILD)/foo が /foo となる。
+#     - 既存ディレクトリを指すと、clean が追跡内容を消し得る。
+#   本ブロックは BUILD のどの参照よりも前に置く (target-specific := は解釈時に
+#   全ターゲット分が展開されるため)。
 ifneq (,$(filter command line environment,$(origin BUILD)))
-  $(error [NG] BUILD はコマンドライン・環境変数から設定できません。出力先を変える場合は config.mk を編集してください。外部からの上書きは、出力先・削除先の乗っ取りを防ぐため拒否します)
+  $(error [NG] BUILD はコマンドライン・環境変数から設定できません。外部からの上書きは、出力先・削除先の乗っ取りを防ぐため拒否します)
 endif
 
 .PHONY: all clean verify verify-fonts verify-kanji verify-release deploy-roms \
@@ -63,7 +55,8 @@ all: $(addprefix $(BUILD)/,$(addsuffix .rom,$(ALL_TARGETS)))
 ROMS_LIST = $(addsuffix .rom,$(ALL_TARGETS))
 #   SHA256SUMS の対象は config.mk の TARGETS / DATA_TARGETS から導いた 15 本に限る
 #   (roms/*.rom のワイルドカードだと、置き忘れた余分な .rom まで拾ってしまう)。
-#   ここでは複写の成否とサイズを確かめる。クリーンビルドとの一致は verify-release が見る。
+#   ここでは複写して各 ROM のサイズを表示する (サイズの比較はしない)。期待するサイズとの
+#   比較は verify が、クリーンビルドとの一致は verify-release が見る。
 deploy-roms: all
 	@mkdir -p roms
 	@set -e; for r in $(ROMS_LIST); do \
@@ -122,14 +115,12 @@ verify-fonts: $(BUILD)/font.bin $(BUILD)/font16.bin
 # --- 16x16 漢字フォント ROM のハッシュ照合 + 独自字形の到達検査 ---
 #   同梱の入力 BDF (字形の出所) とそのライセンス文は fonts/SHA256SUMS の記載と、
 #   scripts/genkanji.py の生成物は SHA256SUMS (配布 ROM 15 本の記載) と突き合わせる。
-#   入力側まで照合するのは、字形の出所が記載どおりであること (別のフォントに
-#   差し替わっていないこと) を毎回機械的に確かめるためである。
 #   続けて scripts/check_kanji_overrides.py が、独自字形を持つ 107 符号位置を
 #   機械列挙し、それぞれがどの ROM のどの枠へ到達するか、その枠の 32 byte が
 #   差し替え字形表と一致するかを全数で確かめる (docs/LEGAL.md §9.2)。
 #   あわせて、同梱 BDF が当該 107 符号位置の字形を持たない改変した BDF であること
 #   (scripts/strip_bdf_chars.py の出力であること) も毎回確かめる。
-#   文書と生成物が食い違ったまま配布されることを防ぐ (verify-release から毎回必ず呼ばれる)。
+#   verify-release から呼ばれる。
 verify-kanji: $(BUILD)/kanji.rom $(BUILD)/kanji2.rom
 	@set -e; grep -E "[[:space:]]\**$(FONTS)/" $(FONT_SUMS) | sha256sum -c - \
 	  || { printf "[NG] %s の記載と同梱フォントの実測が一致しません\n" "$(FONT_SUMS)"; exit 1; }
@@ -150,15 +141,9 @@ verify-kanji: $(BUILD)/kanji.rom $(BUILD)/kanji2.rom
 	  $(BUILD)/kanji.rom $(BUILD)/kanji2.rom
 
 # --- BUILD パスの安全ガード (削除を伴うターゲットの前段) ---
-#   BUILD は config.mk でのみ設定できる (コマンドライン・環境変数からの上書きは
-#   冒頭のガードが一律拒否する)。それでも config.mk の設定ミスで危険なパスを
-#   指す可能性に備え、削除の前に必ず次を確かめる防御的な第 2 の関門である。
+#   削除の前に BUILD が次のいずれでもないことを確かめる。1 つでも当てはまれば失敗する:
 #     空 / "." / ".." / "/" / リポジトリ直下そのもの / その親 / リポジトリ外 /
 #     .git を含むパス / 追跡ファイル (を含むディレクトリ)
-#   のいずれでもないこと。1 つでも当てはまれば削除せずに失敗する。値はレシピの
-#   シェル行へ文字列展開せず環境変数 (BUILD_IN) として渡し、クォートした
-#   "$$BUILD_IN" 越しにのみ参照する。まず英数字と . _ + - / 以外の文字を含む値を
-#   パス解決より前に拒否する。
 check-build-path: export BUILD_IN := $(BUILD)
 check-build-path:
 	@set -e; \
@@ -235,7 +220,7 @@ $(BUILD)/boot_init.rom: $(SRC)/boot_init/boot.s | $(BUILD)
 	$(AS) -fraw -o $@ -l$(BUILD)/boot_init.lst $<
 
 # --- FM77AV: avboot.bin (initiate に埋め込む AV ブートイメージ、640 B) ---
-#   RAM 上の AVBOOT_ORG (本プロジェクトが選んだ位置) 基底の AV ブートイメージ。起動モード判定 + メディア存在プリフライト +
+#   RAM 上の AVBOOT_ORG 基底の AV ブートイメージ。起動モード判定 + メディア存在プリフライト +
 #   BASIC フォールバック + FDC サービス表を供給する中間生成物。
 $(BUILD)/avboot.bin: $(SRC)/initiate/avboot.s | $(BUILD)
 	$(AS) -fraw -o $@ -l$(BUILD)/avboot.lst $(SRC)/initiate/avboot.s
@@ -263,8 +248,7 @@ $(BUILD)/initav1.rom: $(SRC)/initav1/initav1.s $(SRC)/initiate/initiate.s $(BUIL
 
 # --- FM77AV (拡張世代/EX・SX 系): initex.rom (イニシエータ ROM の機種別変種) ---
 #   src/initiate/initiate.s を INIT_EXSX 条件でアセンブルした変種。機種識別域の
-#   中身 (世代名と拡張世代の識別値) だけが initiate.rom と異なる。8192 B のままであり
-#   16 KB 化は行わない。
+#   中身 (世代名と拡張世代の識別値) だけが initiate.rom と異なる。
 $(BUILD)/initex.rom: $(SRC)/initex/initex.s $(SRC)/initiate/initiate.s $(BUILD)/boot_bas.rom $(BUILD)/boot_init.rom $(BUILD)/avboot.bin | $(BUILD)
 	$(AS) -fraw -o $@ -l$(BUILD)/initex.lst -I$(BUILD) $(SRC)/initex/initex.s
 
@@ -292,7 +276,7 @@ $(BUILD)/extsub.rom: $(SRC)/extsub/extsub.s $(BUILD)/font.bin $(BUILD)/font16.bi
 	$(AS) -fraw -o $@ -l$(BUILD)/extsub.lst -I$(BUILD) $(SRC)/extsub/extsub.s
 
 # --- 7T-BASIC 3.1: 7tbasic3.rom (BASIC インタプリタ本体) ---
-#   src/7tbasic3/ から独立実装をアセンブルする。raw 32768 B ($8000-$FFFF) を
+#   src/7tbasic3/ をアセンブルする。raw 32768 B ($8000-$FFFF) を
 #   配布サイズ 31744 B ($8000-$FBFF) へ切詰めて配布 ROM とする。
 #   ($FC00-$FFFF は共有 RAM/I/O/ブート ROM/ベクタがオーバーレイし
 #    ROM としては参照されないため末尾を切詰める)
@@ -312,11 +296,7 @@ $(BUILD)/font16.bin: $(SCRIPTS)/genfont16.py $(BUILD)/font.bin | $(BUILD)
 	$(PYTHON) $(SCRIPTS)/genfont16.py $(BUILD)/font.bin $@
 
 # --- 16x16 漢字フォント ROM (kanji.rom / kanji2.rom、各 131072 B) ---
-#   同梱の 16 ドット BDF (fonts/。パブリックドメイン宣言つきの第三者フォント)
-#   の字形を、本プロジェクトの配置規則で 4096 枠へ並べ替えて 2 本同時に生成する。
-#   1〜8 区の 107 符号位置だけは、本プロジェクトが書き起こした独自字形
-#   (scripts/kanji_glyph_overrides.py) を組み立て段で用いる。
-#   字形の出所・権利区分・配置規則は docs/LEGAL.md §9 を参照。
+#   16 ドット BDF (fonts/) の字形を 4096 枠へ並べ替えて 2 本同時に生成する (docs/LEGAL.md §9)。
 #   1 回の実行で 2 本を書き出すため、kanji2.rom 側は kanji.rom に従属させる
 #   (make -jN で同じスクリプトが二重に走らないようにする)。
 $(BUILD)/kanji.rom: $(SCRIPTS)/genkanji.py $(SCRIPTS)/kanji_glyph_overrides.py \
@@ -351,9 +331,7 @@ else \
 fi
 endef
 
-# --- バージョンの表示 (配布物のバージョンと BASIC のバージョンは別採番である旨を毎回そえる) ---
-#   配布物のバージョンは config.mk の DIST_VERSION が唯一の情報源。
-#   7T-BASIC のバージョンは BASIC インタプリタ本体が持つバージョンで、DIST_VERSION とは連動しない。
+# --- バージョンの表示 ---
 version:
 	@printf "配布物のバージョン  : v%s  (タグ名の想定: v%s)\n" "$(DIST_VERSION)" "$(DIST_VERSION)"
 	@printf "7T-BASIC のバージョン : 3.1 (BASIC インタプリタ本体のバージョン。配布物のバージョンとは別の採番)\n"
@@ -363,7 +341,7 @@ clean: check-build-path
 	rm -rf "$(BUILD)"
 
 #==============================================================================
-# check-build-guard: BUILD の外部上書きが常に拒否されることを常設の負例で確かめる。
+# check-build-guard: BUILD の外部上書きが常に拒否されることを、拒否される入力の例で毎回確かめる。
 #
 #   BUILD は config.mk でのみ設定でき、コマンドライン・環境変数からの上書きは
 #   展開前ガードが一律で拒否する。危険値 (make 関数構文・シェルメタ文字・空値・

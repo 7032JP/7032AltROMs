@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM CSRLIN はカーソルの垂直位置、POS(0) は水平位置、SCREEN(x,y) は指定した
 2 REM キャラクタ座標のキャラクタコードを与える (参考書籍の規定)。
 3 REM LOCATE で移した先を読み、画面に書いた文字列を SCREEN で逆順に読み戻す。

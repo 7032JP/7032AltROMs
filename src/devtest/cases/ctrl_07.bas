@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM ON GOSUB と、GO TO / GO SUB / ON GO TO の分かち書きの受理。
 10 ON 2 GOSUB 100,110:PRINT "AFT"
 20 GO TO 40

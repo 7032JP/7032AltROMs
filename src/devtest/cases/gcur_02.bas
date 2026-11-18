@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM GCURSOR の座標の組は 1 個以上 10 個まで。組が無いときと 11 個あるときは
 2 REM いずれも綴りの誤り (Syntax Error = 2) として捕まる。
 10 ON ERROR GOTO 900

@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 PRINT 32767
 20 PRINT -32768
 30 A%=32767:PRINT A%+1

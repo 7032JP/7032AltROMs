@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM CIRCLE の第 7 引数。F を付けると内部を塗り、省略したときと N を書いたときは
 2 REM 輪郭だけを描いて内部は塗らない。開始位置=終了位置=0 の全周に F を付けた場合を
 3 REM 中心・内部・円周・外部の 4 点で調べる。POINT は点灯 -1 / 消灯 0。

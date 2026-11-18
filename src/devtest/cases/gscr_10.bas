@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM 画面比較: WIDTH 80 (横 80 桁の文字書式) での文字表示。
 10 WIDTH 80
 20 PRINT "WIDE80"

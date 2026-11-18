@@ -1,7 +1,7 @@
 ; SPDX-License-Identifier: MIT
 ; Copyright (c) 2026 Naomitsu.Tsugiiwa
 ;==============================================================================
-; AltROMs subsys_b.rom — FM77AV サブシステム Type-B の位置に置く ROM (独立実装)
+; AltROMs subsys_b.rom — FM77AV サブシステム Type-B の位置に置く ROM
 ;
 ; 8192 byte 固定。サブ CPU $E000-$FFFF にマップ ($FD13=2 で選択。選択と同時に
 ; サブ CPU はリセットされ本 ROM の RESET ベクタから走る)。選択中、サブ CPU の
@@ -14,7 +14,7 @@
 ; 並びで受けて ALU とラインドロワで 320×200 の画面に描く。$1B は受け付けず、$1D は 1 画素
 ; を 2 バイトで返し、全画面の消去は VRAM の 12 の面を 0 にする (動作観察)。
 ;
-; 実体は subsys_c (FM-7 互換サブシステムモニタ) と共用のコマンド処理本体を
+; 実体は subsys_c (FM-7 用のサブシステム ROM) と共用のコマンド処理本体を
 ; SUBSYS_AV と SUBSYS_TB の条件で AV 向けにアセンブルしたものである:
 ;   - フォント区画 ($D800-$DFFF) は ROM に含めない (CG バンク領域が同一 font.bin を
 ;     同アドレスレイアウトで供給するため、font_base=$D800 参照はそのまま機能)

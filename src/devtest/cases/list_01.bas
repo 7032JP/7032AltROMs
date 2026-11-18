@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM LIST KEEPS KANA AS TYPED
 10 LIST
 20 A$="ｱｲｳ"

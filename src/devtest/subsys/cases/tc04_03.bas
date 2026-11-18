@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM GENERATED FROM tc04_03.s BY scripts/gen_subsys_tests.py
 10 CLEAR 512,&H5FFF
 15 PRINT CHR$(27);CHR$(103);

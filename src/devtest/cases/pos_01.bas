@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM POS(0) は画面上のカーソルの水平位置を与える (参考書籍の規定)。
 2 REM LOCATE の直後、文字を書いた後、改行した後の 3 通りを読む。
 10 CLS

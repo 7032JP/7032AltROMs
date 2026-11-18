@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM アドレスを受け取る文は 16 ビットのアドレスをそのまま受ける。基数付き
 2 REM 定数は符号なしなので &H8000 以上の綴りもアドレスとして通ること。
 10 SAVEM"T",&HE000,&HE00F,&HE000

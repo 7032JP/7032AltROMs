@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 DATA AB:Z=9
 20 DATA "C:D":PRINT "HERE"
 30 DATA 1,2:DATA 3

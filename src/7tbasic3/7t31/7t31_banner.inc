@@ -1,8 +1,7 @@
 ; SPDX-License-Identifier: MIT
 ; Copyright (c) 2026 Naomitsu.Tsugiiwa
-; 7T-BASIC 3.1 — コールドスタート時のタイトル・著作権表示 (製品識別 その 1)
-;   cold_banner (7t_startup.inc) の語ループの直後に取り込む。文言は ASCII のまま
-;   ROM に残り、バイナリ検索で見える。
+; 7T-BASIC 3.1 — コールドスタート時のタイトル・著作権表示
+;   cold_banner (7t_startup.inc) の語ループの直後に取り込む。
 ;   1 行目 (title_tbl) は青の帯の上に SYMBOL で描く。先頭 8 バイトはサブシステムの
 ;   SYMBOL ($19) の固定部 (F=0 PSET / A=0 / W=2 (40 桁の倍幅) / H=1 / X の上位 0 /
 ;   Y=0)。続いて語ごとに [色][X 座標の下位 (桁 × 16)][文字数][文字列]、色 0 で終り。

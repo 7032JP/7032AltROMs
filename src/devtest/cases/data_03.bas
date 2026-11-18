@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 DIM S(100)
 20 FOR I=2 TO 100:S(I)=1:NEXT
 30 FOR I=2 TO 10

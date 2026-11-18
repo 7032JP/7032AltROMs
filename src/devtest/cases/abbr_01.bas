@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 GO. 30
 20 PRINT "NG"
 30 GOS. 200

@@ -3,14 +3,17 @@
 ;==============================================================================
 ; 単精度浮動小数演算 (参考書籍の実数演算仕様に準拠)
 ;
-;   + - * / と比較は両オペランドを float 昇格し fadd_core / fmul_core /
-;   fdiv_core / fcmp_core で処理する。結果 FACTYPE=1。
+;   + - * と比較は型で振り分ける: 整数どうしの加減と比較は整数のまま (加減があふれたら
+;   単精度へ昇格)、乗算は 0..255 どうしで積が 32767 以下のときだけ整数、それ以外は単精度。
+;   / は整数どうしも
+;   実数で割る。実数は fadd_core / fmul_core / fdiv_core / fcmp_core、倍精度は 7t_double.inc
+;   で処理する。
 ;   \ (整数除算) と MOD は整数のまま扱う。
 ;
 ;   FAC 展開形 (8B):
 ;     +0 指数 (bias128, 0=値ゼロ) / +1..+4 仮数 32bit (先頭1明示, bit31=$xx+1 の bit7)
 ;     +5 符号 (bit7) / +6..+7 ガード
-;   スクラッチ $0043-$004F を使用 (FAC1/FAC2 と非重複)。X/Y/U は不変。
+;   スクラッチは 7t_defs.inc の定義を使う (FAC1/FAC2 と非重複)。X/Y/U は不変。
 ;==============================================================================
 
 ; impl_int_to_float: FAC1+2 の符号付き16bit整数 → FAC1 (float 展開形), FACTYPE=1
@@ -30,24 +33,21 @@ iitf_pos:
                 CLR     FAC1+5
 iitf_mag:
                 ; magnitude D を仮数上位16bit へ, 下位/ガード 0
-                STD     FAC1+1          ; $51:$52
-                CLR     FAC1+3
-                CLR     FAC1+4
-                CLR     FAC1+6
-                CLR     FAC1+7
+                STD     FAC1+1
+                CLRA                    ; D = 0
+                CLRB
+                STD     FAC1+3
+                STD     FAC1+6
                 LDA     #143            ; 指数の初期値 (magnitude を bit31..16 に置いた前提)
                 STA     FAC1
 iitf_norm:
                 LDA     FAC1+1
-                BMI     iitf_done       ; bit31 (=$51 bit7) セット → 正規化完了
+                BMI     iitf_done       ; bit31 セット → 正規化完了
                 BNE     iitf_nbit       ; 上位バイトに 1 がある → ビット単位で詰める
                 JSR     iitf_shl8       ; 上位 0 バイトは 1 バイト移動で 8 歩ぶん
                 BCS     iitf_norm       ; C=1 = 1 バイトぶん進めた
 iitf_nbit:
-                ; 仮数が全ゼロなら指数を減らし続けて回り続けるので、指数 0 を
-                ; ゼロ値の終端とする。整数経由 (impl_int_to_float) は入口で
-                ; ゼロを弾くため通らないが、仮数を直接組み立てて合流する経路
-                ; (ift_num の 24 bit 組立て) はここでゼロを処理する。
+                ; ゼロは指数 0 で終端する。
                 LDA     FAC1
                 BEQ     fdc_z0
                 JSR     fac1_shl32
@@ -56,7 +56,6 @@ iitf_nbit:
 iitf_done:
                 JMP     fac_type_sng    ; 型=単精度にして復帰 (共通化)
 
-; FRE は全てラベル経由で呼ばれる。
 impl_fn_fre:
                 JSR     impl_eval_expr_p
                 ; 引数が文字列なら「文字列領域の空き」を返す (参考書籍)。
@@ -106,10 +105,10 @@ fdc_go:
                 STD     fdv_rem
                 LDD     FAC2+3
                 STD     fdv_rem+2
-                CLR     fdv_q
-                CLR     fdv_q+1
-                CLR     fdv_q+2
-                CLR     fdv_q+3
+                CLRA
+                CLRB
+                STD     fdv_q           ; 商 4 バイトを 0 に (CLR 4 回より短く速い)
+                STD     fdv_q+2
                 ; 事前減算: rem >= m1 なら rem -= m1, int_q=1 (rem<2*m1 保証で1回)
                 ; int_q は符号バイト(2,S)の bit0 に立てる
                 LDD     fdv_rem
@@ -154,13 +153,13 @@ fdc_sub:
 fdc_nosub:
                 DEC     fdv_cnt
                 BNE     fdc_divlp
-                ; 仮数組み立て+最近接丸め (丸め追加。本体は空きプール)
+                ; 仮数組み立てと最近接丸め
                 JMP     fdc_post
 
 ;------------------------------------------------------------------------------
 ; fdc_rsub — 32bit の剰余から除数仮数を引く (fdv_rem -= fdv_m1)。
 ;   復元法除算の前引きと各ビットの引きで同じ並びを使うので 1 本にまとめてある。
-;   破壊: B,CC。
+;   破壊: A,B,CC。
 ;------------------------------------------------------------------------------
 fdc_rsub:
                 LDD     fdv_rem+2       ; 下位 16 ビット
@@ -172,12 +171,6 @@ fdc_rsub:
                 STD     fdv_rem
                 RTS
 
-;==============================================================================
-; print_float: FACTYPE=1 の FAC1 を有効6桁10進で出力 (impl_print_val から分岐)
-;   整数値は小数点なし / 0.5→.5 (先頭ゼロ省略) / 末尾ゼロ抑制。
-;   0.1≤|x|<1E6 は通常表記、それ以外は E 形式 (pfe_try) で出す。
-;   表示桁の最下位で最近接丸めを行い、桁上げは整数部へ伝播させる。X 保存。
-;==============================================================================
 ; div32by10: pf_ip(4B) /= 10, 余り(0-9) → A。X/Y/U 保存。
 div32by10:
                 CLRA              ; 余り
@@ -226,26 +219,25 @@ fracx10:
                 STB     pf_frac
                 RTS                     ; A = あふれ桁
 
-; pf_add_round: 表示小数桁数 pf_nfrac に基づき pf_frac へ 0.5*10^-nfrac を加算し
+; pf_add_round: 表示小数桁数 pf_nfrac に基づき pf_frac へ 0.55*10^-nfrac を加算し
 ;   最近接丸めを行う。呼出しは整数桁抽出の前。桁上げはそのまま pf_ip (未抽出の
 ;   整数部) へ +1 伝播させる (動作観察)。
-;   X/Y/U 保存。
+;   X 破壊 (print_float が入口で退避済)、Y/U 保存。
 pf_add_round:
-                LDD     pf_ip
-                PSHS    D
+                LDX     pf_ip
                 LDD     pf_ip+2
-                PSHS    D                   ; 整数部退避 (0.5*10^-nfrac 生成に流用)
-                LDD     #$8000              ; pf_ip = 2^31 (= 0.5 の固定小数)
+                PSHS    D,X                 ; 整数部退避 (丸め加算値の生成に流用。
+                                            ;   X は print_float が退避済なので使う)
+                ; 加える値は 0.55 × 10^-nfrac (7 桁目と 6 桁目の 2 段の四捨五入に当たる)。
+                LDD     #$8CCC              ; pf_ip = $8CCCCCCC (= 0.55 の固定小数)
                 STD     pf_ip
-                CLR     pf_ip+2
-                CLR     pf_ip+3
-                LDB     pf_nfrac
-                BEQ     pfar_add
+                TFR     B,A
+                STD     pf_ip+2
+                TST     pf_fcount           ; 表示小数桁数 (pf_nfrac の写し。呼出側が
+                BEQ     pfar_add            ;   この後で置き直すので回数の計数に使う)
 pfar_div:
-                PSHS    B                   ; div32by10 は B を壊すため退避
                 BSR     div32by10           ; pf_ip /= 10 (余りA は無視)
-                PULS    B
-                DECB
+                DEC     pf_fcount
                 BNE     pfar_div
 pfar_add:
                 LDD     pf_frac+2           ; pf_frac += pf_ip (4B。下位 16 ビット)
@@ -255,12 +247,9 @@ pfar_add:
                 ADCB    pf_ip+1
                 ADCA    pf_ip
                 STD     pf_frac             ; C = 整数部への桁上げ
-                PULS    D
+                PULS    D,X
                 STD     pf_ip+2
-                PULS    D
-                STD     pf_ip               ; 整数部復元 (CC の C は PULS/STD で不変…
-                                            ;  ではないため下で再判定しない: PULS は CC を
-                                            ;  変えないが STD は N/Z のみ変更で C 保存)
+                STX     pf_ip               ; 整数部復元 (PULS/STD は C を変えない)
                 BCC     pfar_done           ; 桁上げ無し → OK
                 INC     pf_ip+3             ; 桁上げ → 整数部 +1 (32bit 伝播)
                 BNE     pfar_done
@@ -272,17 +261,12 @@ pfar_add:
 pfar_done:
                 RTS
 
-;==============================================================================
-; ファイル入出力ルーチン群の置き場所については 7t_cmt_io.inc を参照。
-;==============================================================================
-                include "7t_using_num1.inc"     ; PRINT USING 数値整形 1/4 (プール)
+                include "7t_using_num1.inc"     ; PRINT USING 数値整形 1/4
 ; PRINT USING — 終端処理
-;   書式 1 周で値を 1 つも消費できなければ Illegal Function Call (動作観察。
-;   USING を式評価へ流すと未消費のまま同一項を無限に印字するため、ここで
-;   打ち切る)。値が残っていれば書式再利用 (動作観察)。値切れでフィールドに達した
-;   ときは末尾 ';' でも改行して打切る (動作観察)。
-;   本片は空きプール。
-;==============================================================================
+;   書式 1 周で値を 1 つも消費できなければ Illegal Function Call (動作観察)。
+;   値が残っていれば書式再利用 (動作観察)。値切れでフィールドに達したときは
+;   末尾 ';' でも改行して打切る (動作観察)。
+;------------------------------------------------------------------------------
 ipu_fmt_end:
         LDA     UF_FLAGS,S
         BITA    #1              ; 値保留?
@@ -311,7 +295,6 @@ flt_zero1:
                 CLR     FAC1+3
                 CLR     FAC1+4
                 CLR     FAC1+5
-; >>FOLD fac1_fin_sng
 ;------------------------------------------------------------------------------
 ; fac1_fin_sng — 演算結果の仕上げ。ガード桁を 0 にし、型を単精度にして復帰する。
 ;   直前の CLR FAC1+5 (flt_zero1) から落ち込む経路もある。
@@ -323,12 +306,9 @@ fac1_fin_sng:
                 JMP     fac_type_sng    ; 型=単精度にして復帰 (共通化)
 
 ;------------------------------------------------------------------------------
-; errc_5 / errc_8 / errc_2 — 誤り送出の共通スタブ (容量捻出)
-;   各所へ `LDB #n : JMP impl_error_handler` (5 byte) を展開する代わりに、
-;   出現頻度の高い 3 種だけをここへ 1 本ずつ置き、呼出側は `JMP errc_n`
-;   (3 byte) に畳む。誤り番号は参考書籍の誤り一覧に従う:
-;     5 = Illegal Function Call / 8 = Undefined Line Number / 2 = Syntax Error
-;   (本片は空きプールに置く。位置依存はない)
+; errc_5 / errc_8 / errc_6 / errc_11 / errc_2 — 誤り送出の共通スタブ
+;   5 = Illegal Function Call / 8 = Undefined Line Number / 6 = Overflow /
+;   11 = Division By Zero / 2 = Syntax Error
 ;------------------------------------------------------------------------------
 errc_5:
                 LDB     #5
@@ -347,7 +327,7 @@ errc_2:
 errc_go:
                 JMP     impl_error_handler
 
-                include "7t_strcpy.inc"         ; 実体の複写 (区画の都合でここへ)
+                include "7t_strcpy.inc"         ; 実体の複写
 
 ;------------------------------------------------------------------------------
 ; dsv_alloc — FAT バッファ (str_work_buf) から最小番号の空き ($FF) クラスタを確保する
@@ -373,34 +353,30 @@ dsa_ok:
                 STA     ,X              ; 仮終端で占有
                 RTS
 
-                include "7t_using_round.inc"    ; PRINT USING 四捨五入 (プール)
+                include "7t_using_round.inc"    ; PRINT USING 四捨五入
 
                 include "7t_strinit.inc"        ; 文字列領域の張り直し
 
-                include "7t_double2.inc"        ; 倍精度展開/パック (プール)
-                include "7t_using_fin.inc"      ; PRINT USING 終端処理 (プール)
+                include "7t_double2.inc"        ; 倍精度展開/パック
+                include "7t_using_fin.inc"      ; PRINT USING 終端処理
 ;------------------------------------------------------------------------------
-; brk_pre — Break 表示の前置き。プール配置 (呼出は JSR 拡張のみ)。
+; brk_pre — Break 表示の前置き。
 ;   まず現在行を無条件に閉じ、続けてエラー表示と同じ前置き (err_pre) を通す。
 ;   結果として Break の前だけ空行が 2 行になる。
 ;------------------------------------------------------------------------------
 brk_pre:
                 JSR     disk_crlf
 ;------------------------------------------------------------------------------
-; err_pre — エラー表示の前置き。プール配置 (呼出は JSR 拡張のみ)。
-;   演奏を止め (参考書籍)、表示前の行送りを行う。呼出元
-;   (impl_error_handler の属する区間) は 当区間の残余が 0 なので、
-;   増分をここへ寄せている。
+; err_pre — エラー表示の前置き。
+;   演奏を止め (参考書籍)、表示前の行送りを行う。
 ;------------------------------------------------------------------------------
 err_pre:
                 JSR     play_stop
                 JMP     nl_blank
-; >>FOLD dbl_shl_dec
 ;------------------------------------------------------------------------------
 ; dbl_shl_dec — 倍精度の正規化 1 歩。仮数を 1 桁左送りし、指数を 1 減らす。
 ;   加減算・展開・十進取込の 3 箇所で使う。RTS は CC を変えないので、呼出側は
-;   STD dw1_exp の結果で分岐できる。
-;   直前は JMP なので、この定義へ落ち込む経路は無い。破壊: A,B,X。
+;   STD dw1_exp の結果で分岐できる。破壊: A,B,X。
 ;------------------------------------------------------------------------------
 dbl_shl_dec:
                 JSR     mshl8_dw1
@@ -408,9 +384,14 @@ dbl_shl_dec:
                 SUBD    #1
                 STD     dw1_exp
                 RTS
-; <<FOLD dbl_shl_dec
 
 
+;==============================================================================
+; print_float: FACTYPE=1 の FAC1 を有効6桁10進で出力 (impl_print_val から分岐)
+;   整数値は小数点なし / 0.5→.5 (先頭ゼロ省略) / 末尾ゼロ抑制。
+;   0.1≤|x|<1E6 は通常表記 (0.1 未満でも小数第 6 位までで表せる値は通常表記)、それ以外は E 形式 (pfe_try)。
+;   表示桁の最下位で最近接丸めを行い、桁上げは整数部へ伝播させる。X 保存。
+;==============================================================================
 print_float:
                 PSHS    X               ; 本文ポインタ退避 (putchar は X/B 保存)
                 ; 符号
@@ -439,10 +420,10 @@ pf_nz:
 ;   高 4 バイト = 整数部、低 4 バイト = 小数部。通常表記と E 形式の共通の並び
 ;   (破壊: A,B)。
 pf_dacc_load:
-                CLR     pf_dacc
-                CLR     pf_dacc+1
-                CLR     pf_dacc+2
-                CLR     pf_dacc+3
+                CLRA
+                CLRB
+                STD     pf_dacc         ; 整数部 4 バイトを 0 に (CLR 4 回より短く速い)
+                STD     pf_dacc+2
                 LDD     FAC1+1
                 STD     pf_dacc+4
                 LDD     FAC1+3
@@ -483,12 +464,11 @@ pf_fixed:
                 BSR     pf_dacc_load    ; 読み込みと桁送りは E 形式と共通の 1 本
 pf_shifted:
                 ; ---- 事前丸め: 先に整数桁数だけを数え (pf_ip は退避/復元)、
-                ;      0.5*10^-nfrac を加算してから桁抽出する。桁上げは整数部へ
+                ;      0.55*10^-nfrac を加算してから桁抽出する。桁上げは整数部へ
                 ;      伝播する ----
-                LDD     pf_ip
-                PSHS    D
+                LDX     pf_ip
                 LDD     pf_ip+2
-                PSHS    D                   ; pf_ip (4B) 退避
+                PSHS    D,X                 ; pf_ip (4B) 退避 (X は入口で退避済)
                 CLR     pf_nip
                 JSR     pf_ip_or32
                 BEQ     pfsh_cnt0
@@ -498,10 +478,9 @@ pfsh_cnt:
                 JSR     pf_ip_or32
                 BNE     pfsh_cnt
 pfsh_cnt0:
-                PULS    D
+                PULS    D,X
                 STD     pf_ip+2
-                PULS    D
-                STD     pf_ip               ; pf_ip 復元
+                STX     pf_ip               ; pf_ip 復元
                 LDA     #6
                 SUBA    pf_nip
                 BPL     pfsh_nfok
@@ -597,21 +576,17 @@ pf_end:
                 PULS    X,PC
 
 ;==============================================================================
-; 単精度浮動小数 四則 (加減乗比較) + 小数リテラル — プール本体
+; 単精度浮動小数 四則 (加減乗比較) + 小数リテラル
 ;
-;   本来の区間の外 ($CE03 以降の空きプール) に本体を置き、算術セグメントの
-;   トランポリンから JMP される。整数のみのオペランドは 16bit の経路を
-;   そのまま通し結果ビットを不変に保つ (型二重パス)。片方でも単精度なら
-;   float 昇格して float コアで演算する。
+;   式評価から型で振り分ける入口として呼ばれる。整数のみのオペランドは 16bit の経路を
+;   通す。片方でも単精度なら単精度へ昇格して float コアで演算する。
 ;
 ;   FAC 展開形 (8B): +0 指数(bias128,0=零) / +1..+4 仮数32bit(先頭1明示) /
 ;                    +5 符号(bit7) / +6..+7 ガード。FAC2=+0..+7。
-;   結果型: 両オペランド整数なら整数(FACTYPE=0)、片方でも単精度なら単精度(1)。
+;   結果型: 両オペランド整数なら整数(FACTYPE=0。ただし加減のあふれと、乗算で 0..255
+;   どうしでないか積が 32768 以上のときは単精度)、片方でも単精度なら単精度(1)。
 ;==============================================================================
 
-; push_fac1: FAC1(8B) + FACTYPE を HW スタックへ積み、戻り後も残す。
-;   ネスト式のため 16bit 退避に代えて FAC 全体+型を退避する。破壊: Y (直後に
-;   JSR expr_* が続くため呼出元は Y を当てにしない)。X/U/D/CC は温存。
 negd:                                   ; D = -D
                 COMA
                 COMB
@@ -623,9 +598,9 @@ pf_ip_or32:                             ; pf_ip 32bit が 0 か調べる
                 ORA     pf_ip+2
                 ORA     pf_ip+3
                 RTS
-push_fac1_x1:                           ;!NOTAIL 1 進めてから FAC1 を積む
+push_fac1_x1:                           ; 1 進めてから FAC1 を積む
                 LEAX    1,X
-push_fac1:                              ;!NOTAIL 自身の戻りアドレスを PULS する
+push_fac1:                              ; FAC1(8B)+FACTYPE を HW スタックへ積む。自身の戻りアドレスを PULS する。破壊: A,B,CC
                 PULS    D               ; D = 戻りアドレス (A,B のみ破壊; Y は温存)
                 STD     flt_ret
                 LDD     FAC1
@@ -641,8 +616,8 @@ push_fac1:                              ;!NOTAIL 自身の戻りアドレスを 
                 JMP     [flt_ret]       ; 9B を残して復帰
 
 ; pop_to_fac2: push_fac1 が積んだ 9B を FAC2 + FAC2TYPE へ取り出す。
-;   FAC1 (右オペランド, expr_* が残した) は保持。破壊: Y,A,D,CC。X/U 温存。
-pop_to_fac2:                            ;!NOTAIL 自身の戻りアドレスを PULS する
+;   FAC1 (右オペランド, expr_* が残した) は保持。破壊: A,B,CC。X/Y/U 温存。
+pop_to_fac2:                            ; 自身の戻りアドレスを PULS する
                 PULS    D               ; D = 戻りアドレス (Y 温存)
                 STD     flt_ret
                 PULS    A               ; 左オペランド型
@@ -686,10 +661,10 @@ iitf2_pos:
                 CLR     FAC2+5
 iitf2_mag:
                 STD     FAC2+1
-                CLR     FAC2+3
-                CLR     FAC2+4
-                CLR     FAC2+6
-                CLR     FAC2+7
+                CLRA                    ; D = 0
+                CLRB
+                STD     FAC2+3
+                STD     FAC2+6
                 LDA     #143
                 STA     FAC2
 iitf2_norm:
@@ -703,20 +678,17 @@ iitf2_norm:
                 BRA     iitf2_norm
 iitf2_done:
                 RTS
-iitf2_zero:
-                CLR     FAC2
-                CLR     FAC2+1
-                CLR     FAC2+2
-                CLR     FAC2+3
-                CLR     FAC2+4
-                CLR     FAC2+5
+iitf2_zero:                             ; D = 0 で入る (LDD FAC2+2 / BEQ の直後)
+                STD     FAC2
+                STD     FAC2+2
+                STD     FAC2+4
                 RTS
 
 ; 定数 10.0 (float): 指数$83(=128+3), 仮数$A0000000(=1.25), 符号+ → 1.25*8=10
 ften:
                 FCB     $83,$A0,$00,$00,$00,$00
 
-; --- 型二重パス トランポリン本体 (算術セグメントから JMP される) ---
+; --- 型で振り分ける入口の本体 ---
 ; 整数のあふれ: 16 ビットに収まらない結果になったら単精度で計算し直す。
 ;   参考書籍のとおり、整数どうしの加減乗の結果が整数の範囲
 ;   (-32768..32767) を超えると値は実数 (単精度) になる。以下の各パスは「まず 16 ビットで試し、あふれたら
@@ -749,7 +721,7 @@ fps_float:
                 JSR     dchk                ; どちらかが倍精度 → 倍精度コア
                 LBCS    fps_dbl
 fps_flt2:
-                JSR     ensure_operands_float
+                BSR     ensure_operands_float
                 JSR     fac1_flip_sign
                 BRA     fadd_core
 
@@ -799,7 +771,6 @@ fdiv_dispatch:
                 JSR     ensure_operands_float
                 JMP     fdiv_core           ; FAC2/FAC1 (両 float)
 
-; --- 空きプール ---
 ;------------------------------------------------------------------------------
 ; err_tmm — Type Mismatch の送出口。
 err_tmm:
@@ -808,7 +779,7 @@ err_tmm:
 
 ;------------------------------------------------------------------------------
 ; dsv_dirfull — ディスク SAVE: 書込先スロットが無い (Directory Full) の中止口
-;   (本体は 7t_diskboot.inc の dsv_body。置き場所は容量の都合)
+;   (本体は 7t_diskboot.inc の dsv_body)
 ;------------------------------------------------------------------------------
 dsv_dirfull:
                 LDB     #65             ; Directory Full (参考書籍)
@@ -975,12 +946,7 @@ fac_round:
                 INC     fa_exp
 fac_store_a:
                 LDA     fa_exp
-                ; 加減算の結果指数が単精度の格納範囲を超えたら Overflow (6) で
-                ; 止める。同符号加算の桁上がりや丸めの繰り上がりで内部展開形の
-                ; 指数が上限 254 を超えると、検査なしでは範囲外の値が黙って
-                ; 格納され (格納形への +1 で指数が 0 へ巻き付き、値ゼロに化ける)、
-                ; 指数 254 超を Overflow にする乗除算と挙動が食い違う
-                ; (参考書籍の誤り一覧 6 = Overflow)。
+                ; 指数 254 超は Overflow で止める。
                 LBEQ    errc_6          ; 指数が 2 回の繰り上がりで 0 へ巻き付いた
                 CMPA    #$FF
                 LBEQ    errc_6          ; 指数 255 = 内部展開形の上限 254 超
@@ -997,7 +963,7 @@ fac_zero:
                 JMP     flt_zero1       ; 値ゼロの単精度 (共通本体)
 
 ;------------------------------------------------------------------------------
-; fmul_core: FAC1 = FAC2 * FAC1 (両 float)。指数加算-bias, 32x32→64bit 右シフト
+; fmul_core: FAC1 = FAC2 * FAC1 (両 float)。指数加算-bias, MUL の部分積で 32x32→64bit
 ;   積, 正規化, ガード丸め。結果 FACTYPE=1。X/Y/U 温存。
 ;------------------------------------------------------------------------------
 fmul_core:
@@ -1024,7 +990,6 @@ fmul_core:
                 LDD     FAC2+3
                 STD     fm_m2+2
                 JSR     fmul_bmul           ; MUL の部分積で 64bit 厳密積を作る
-                                            ;   (本体は 7t_startup.inc 末尾のプール)
                 ; P = fm_phi:fm_plo。bit63 が 0 なら左1シフト+指数--
                 LDA     fm_phi
                 BMI     fmul_normok
@@ -1131,7 +1096,7 @@ fcm_diff:
                 BRA     fcm_lt
 
 ; MOD: FAC2 mod FAC1 → FAC1  (余りの符号は被除数 FAC2 に従う)
-;   (置き場所は容量の都合。div16s は 7t_expr.inc)
+;   (div16s は 7t_expr.inc)
 impl_fp_mod:
                 JSR     impl_fac_to_int_round ; 右辺(除数)を整数化
                 STD     FAC1+2
@@ -1146,14 +1111,10 @@ fmod_ok:
                 JSR     impl_int_to_fac
                 PULS    X,PC
 
-; (pn_decimal 本体は後方の空きプール (連携サービス入口の後) に置く。仮数を
-;  16bit で累算すると 5 桁超の整数・多桁小数であふれるため、そこでは
-;  より広い累算幅と、トークン化済み演算子を含む指数 E の符号を扱う)
 
 ;==============================================================================
 ; 単精度 内部形式 パック/アンパック + FIX + FOR(実数) 拡張
-;   内部形式 (単精度 4B)
-;   のパック形式:
+;   単精度 4B のパック形式:
 ;     [0] 指数 (bias128, 0=値ゼロ)
 ;     [1] 仮数 MSB (bit7=符号, bit6-0=仮数 b30..b24。明示先頭1は符号へ差替)
 ;     [2] 仮数 b23..b16
@@ -1171,24 +1132,23 @@ pack_sng:
                 BNE     pmb_isf
                 JSR     impl_int_to_float
 pmb_isf:
+                LDB     FAC1+1          ; 仮数の先頭バイト
+                ASLB                    ; 先頭の 1 を落とす
+                LDA     FAC1+5          ; 符号 (bit7)
+                ASLA
+                RORB                    ; 落とした位置へ符号を入れる
                 LDA     FAC1            ; 指数 (内部展開形)
-                BEQ     pmb_zero        ; 指数0 → 値ゼロ
+                BEQ     pmb_zero        ; 指数 0 → 値ゼロ
                 INCA                    ; 格納形の指数基準は内部展開形 +1
-                STA     ,U
-                LDA     FAC1+5          ; 符号 ($00/$80) → $7F/$FF
-                ORA     #$7F
-                ANDA    FAC1+1          ; 先頭1を落として符号ビットへ差し替え
-                STA     1,U
+                STD     ,U              ; 指数と、符号つきの仮数の先頭
                 LDD     FAC1+2          ; 仮数 b23..b8
                 STD     2,U
                 RTS
 pmb_zero:
-                CLR     ,U
-                CLR     1,U
-                CLR     2,U
-                CLR     3,U
+                CLRB                    ; 値ゼロは 4 バイトとも 0 (A = 0)
+                STD     ,U
+                STD     2,U
                 RTS
-
 ; unpack_sng: U 指す 4B 内部形式 → FAC1 展開形, FACTYPE=1。破壊: A,B,CC。X/Y/U 温存。
 ;   格納形の指数基準は内部展開形 +1 (仮数 [0.5,1) 規約) ゆえ 1 だけ下げて渡す。
 unpack_sng:
@@ -1228,7 +1188,7 @@ unpack_sng_f2:
                 CLR     FAC2+7
                 RTS
 umf2_zero:
-                ; FAC2 のゼロ詰めは iitf2_zero と同一手順なのでそこへ寄せる。
+                CLRB                    ; A は 0 (指数 0 で分岐済)。B も 0 にして D = 0 で入る
                 JMP     iitf2_zero
 
 ; float_to_int_trunc: FACTYPE=1 の FAC1 をゼロ方向切り捨て(FIX)し D=符号付き16bit。
@@ -1273,7 +1233,7 @@ fti_zero:
                 RTS
 
 ;==============================================================================
-; 変数 SNG 経路 / FOR 制御変数 / NEXT の 内部形式 本体 (トランポリンから JMP される)
+; 変数 SNG 経路 / FOR 制御変数 / NEXT の 内部形式 本体
 ;==============================================================================
 
 ; pool_next_loop: NEXT 本体。レコード var_addr の bit15 で INT/SNG を切替。
@@ -1294,11 +1254,7 @@ pnl_top:                                ; X = 枠 (= 枠列の先頭)
                 LDU     1,X
                 LDD     ,U
                 ADDD    9,X
-                ; 制御変数 + 増分 が整数の範囲 (-32768..32767) を外れたら
-                ; Overflow で止める。検査が無いと 32767+1 が -32768 へ巻き付き、
-                ; FOR I%=32765 TO 32767 が終わらずに周回し続ける。巻き付いた値を
-                ; 制御変数へ書かないよう、格納の前に判定する
-                ; (参考書籍の誤り一覧 6 = Overflow)。
+                ; 制御変数 + 増分 が整数の範囲を外れたら Overflow で止める。
                 LBVS    errc_6
                 STD     ,U
                 LDD     9,X
@@ -1360,8 +1316,6 @@ pnl_err:
                 LDB     #1              ; Next Without For
                 JMP     impl_error_handler
 
-; (SNG 制御変数の FOR 構築 for_setup_sng は 7t_arrays.inc の空きプールに置く。
-;  置き場所は容量の都合。)
 
 ; fss_alloc: 繰り返しの枠 (15B) を枠列へ積む。種別と var_addr(for_var_ptr) を格納。
 ;   返り U = 枠+3 (終値格納先)。X 温存。破壊: A,B,D。溢れは Out Of Memory (frame_ins)。
@@ -1380,11 +1334,9 @@ fss_alloc:
 
 ;==============================================================================
 ; print_float 指数表記 (E形式) 拡張
-;   参考書籍の単精度実数 PRINT 仕様 (有効6桁, 指数形式 E[±]nn) に準拠。
+;   単精度実数 PRINT: 有効6桁, 指数形式 E[±]nn (参考書籍)。
 ;   通常表記 (fixed) では表しきれない大小 magnitude を d.dddddE±nn 形式で出力する。
-;   閾値: 0.1 ≤ |v| < 1E6 は通常表記, それ以外は E形式 (詳細は pfe_try)。
-;   本体アドレスは固定入口ではなく, ROM 内から記号参照される内部ルーチン。
-;   以降の配置 (末尾のベクタ (ワード (2 バイト))) は末尾 ZMB が長さを吸収して不変に保つ。
+;   閾値は pfe_try を参照。
 ;==============================================================================
 
 ; --- 補助: FAC 8B コピー / 定数ロード ---
@@ -1398,7 +1350,6 @@ pf_f1tof2:                              ; FAC2 = FAC1 (8B)
                 LDD     FAC1+6
                 STD     FAC2+6
                 RTS
-; flt_zero1 / fac1_fin_sng は本ファイル前半に置く。
 
 ; pool_fn_abs: ABS の本体。型を保ったまま符号だけを落とす (整数は単精度へ昇格)。
 ;   引数を 16bit 整数へ丸めると端数が落ちるので、丸めは行わない (ABS は大きさ
@@ -1453,13 +1404,11 @@ dw_t2:
 dw_rts:
                 RTS
 
-                include "7t_using_parse1.inc"   ; PRINT USING 10進解析 本体 (プール)
+                include "7t_using_parse1.inc"   ; PRINT USING 10進解析 本体
 ;------------------------------------------------------------------------------
-; 連携サービス入口 — コンソール 1 行入力 (復帰: X=入力行バッファ, C=0 正常)
-;   ディスク側システム連携の入口 (本体 7t_diskboot.inc)。
 ;------------------------------------------------------------------------------
-                include "7t_strtotmp.inc"       ; 一時領域への複写 (区画の都合でここへ)
-                include "7t_datitem.inc"        ; DATA/INPUT の項目判定 (プール)
+                include "7t_strtotmp.inc"       ; 一時領域への複写
+                include "7t_datitem.inc"        ; DATA/INPUT の項目判定
 
 ;------------------------------------------------------------------------------
 ; chk_alpha — 1 字が英字であることを確かめ、A-Z を 0-25 の添字へ直す。
@@ -1468,16 +1417,15 @@ dw_rts:
 ;   入力: A = 字。出力: A = 添字 (0-25)。英字でなければ Syntax Error (復帰しない)。
 ;   ('A' を引いた値は、英字以外では必ず 26 以上 (符号なし) になるので 1 回の
 ;    比較で上下両方の外れを捕まえられる)
-;   (呼出元の区画に残量が無いため本プールへ置く。参照はラベル経由のみ)
 ;------------------------------------------------------------------------------
 chk_alpha:
                 SUBA    #'A'
                 CMPA    #26
                 LBHS    errc_2
                 RTS
-                include "7t_double3.inc"        ; 倍精度型降格/ディスパッチ (プール)
+                include "7t_double3.inc"        ; 倍精度型降格/ディスパッチ
 
-                include "7t_using_exp4.inc"     ; PRINT USING 指数部 2 桁化 (プール)
+                include "7t_using_exp4.inc"     ; PRINT USING 指数部 2 桁化
 
 ; pfe_try: FAC1(magnitude, 非零) を見て閾値外なら E形式で出力し carry セットで復帰。
 ;   閾値内なら FAC1 を無傷で残し carry クリアで復帰 (呼出側が通常表記を続行)。
@@ -1496,20 +1444,18 @@ pfe_try:
                 BMI     pfe_small       ; v < 0.1 → 小数第 6 位判定へ
                 ANDCC   #$FE            ; carry クリア = 通常表記
                 RTS
-; >>FOLD pf_cmp_v
 ;------------------------------------------------------------------------------
 ; pf_cmp_v — 表示用の十進正規化で使う「値と定数の大小比較」の定型。
 ;   入力: X = 比較する定数のアドレス / FAC2 = 値 v。
 ;   出力: A = sign(v - 定数) (TSTA 済) / FAC1 = v (復元済)。
 ;   十進正規化の 4 箇所で使う。RTS は CC を変えないので、呼出側は BPL/BMI で
 ;   分岐できる。
-;   直前は RTS なので、この定義へ落ち込む経路は無い。
 ;------------------------------------------------------------------------------
 pf_cmp_v:
                 JSR     pf_ldc1         ; FAC1 = 定数
                 JSR     fcmp_core       ; A = sign(v - 定数)
                 PSHS    A               ; pf_f2tof1 が A/B/CC を壊すため退避
-                ; FAC1 = v (復元) (ここへ展開)
+                ; FAC1 = v (復元)
 pf_f2tof1:                              ; FAC1 = FAC2 (8B)
                 LDD     FAC2
                 STD     FAC1
@@ -1522,7 +1468,6 @@ pf_f2tof1:                              ; FAC1 = FAC2 (8B)
                 PULS    A
                 TSTA
                 RTS
-; <<FOLD pf_cmp_v
 pfe_go:
                 BSR     pfe_output
                 ORCC    #$01            ; carry セット = E形式で処理済
@@ -1532,7 +1477,7 @@ pfe_small:
                 ; 最下位有効桁の十進位置 = cnt + (N の末尾ゼロ数 t)。-6 以上なら
                 ; 固定表記で表しきれる (それ未満は第 7 位以下が必要 → E形式)。
                 LDX     #pf_vsave
-; pf_save_v / pf_restore_v: FAC1 8B を X の指すバッファへ/から複写。破壊: A,B,CC。
+                ; FAC1 8B を pf_vsave へ控える
 pf_save_v:
                 JSR     fx_st1          ; FAC1 の 6B を X へ (共通本体。X は保たれる)
                 LDD     FAC1+6
@@ -1552,7 +1497,7 @@ pfs_tzd:
                 ADDB    pfe_cnt         ; B = cnt + t (符号付き)
                 PSHS    B
                 LDX     #pf_vsave
-                ; FAC1 = v (復元) (ここへ展開)
+                ; FAC1 = v (控えから復元)
 pf_restore_v:
                 LDD     ,X
                 STD     FAC1
@@ -1621,16 +1566,17 @@ pfe_scaled:
                 INC     pf_ip
 pfe_ovchk:
                 ; 切上あふれ N==1000000 ($000F4240) なら N=100000 ($000186A0), cnt++
-                LDD     pf_ip
-                CMPD    #$000F
-                BNE     pfe_scdone
+                ;   N < 2^24 なので pf_ip (最上位) は 0。残り 3 バイトで見分ける
                 LDD     pf_ip+2
                 CMPD    #$4240
                 BNE     pfe_scdone
-                LDD     #$0001
-                STD     pf_ip
+                LDA     pf_ip+1
+                CMPA    #$0F
+                BNE     pfe_scdone
                 LDD     #$86A0
                 STD     pf_ip+2
+                LDA     #$01
+                STA     pf_ip+1
                 INC     pfe_cnt
 pfe_scdone:
                 RTS
@@ -1717,7 +1663,7 @@ pfc_1e5:        FCB     $90,$C3,$50,$00,$00,$00   ; 100000.0
 pfc_1e6:        FCB     $93,$F4,$24,$00,$00,$00   ; 1000000.0
 pfc_1e_1:       FCB     $7C,$CC,$CC,$CD,$00,$00   ; 0.1 (単精度)
 
-; --- 倍精度リテラル分類 (本体は 7t_double5.inc, 予算都合で本余白へ) ---
+; --- 倍精度リテラル分類 (本体は 7t_double5.inc) ---
 ; pnd_class: X の指すリテラルを先読みし、倍精度なら C=1。X 温存。破壊: A,B
 pnd_class:
                 PSHS    X
@@ -1763,15 +1709,10 @@ pc_dbl:
                 RTS
 
 
-;------------------------------------------------------------------------------
-; 打鍵/報知効果 (ディスク側システム連携が要求する入口。アドレスは固定しない)
-;   実装は受理のみ (RTS)。効果音は省略する (表示・進行への副作用は無い)。
-;------------------------------------------------------------------------------
-                include "7t_using_rep.inc"      ; PRINT USING 反復出力 (プール)
-                include "7t_strasg.inc"         ; 文字列変数への格納 (区画の都合でここへ)
+                include "7t_using_rep.inc"      ; PRINT USING 反復出力
+                include "7t_strasg.inc"         ; 文字列変数への格納
 
 ; pf_ldc1: FAC1[0..5] = X が指す 6B 定数, ガード0
-;   (置き場所は容量の都合。ラベル参照のみで位置依存は無い)
 pf_ldc1:
                 LDD     ,X++
                 STD     FAC1            ; 指数, 仮数最上位
@@ -1785,17 +1726,16 @@ pf_ldc1:
 
 ;------------------------------------------------------------------------------
 ; pn_decimal: 10 進数値リテラルを読み FAC1 へ。
-;   参考書籍の数値定数仕様に整合:
 ;   ・仮数は 32bit (pn_mant) で累算。あふれる桁は整数部なら十進指数へ繰上げ、
 ;     小数部なら切り捨てる (有効桁は表示 6 桁に対して十分)。
 ;   ・16bit 符号付きに収まる純整数 (0..32767) は整数 (FACTYPE=0)。32767 超の整数・小数点/指数付きは単精度へ昇格する。
 ;     (単精度→16bit の FIX は下位 16bit 一致のため POKE 等へ渡るビットは同じ)
 ;   ・指数 E の符号は ASCII '+'/'-' とトークン化済み演算子 (TOK_PLUS/TOK_MINUS) の両方を
 ;     受理する (プログラム本文では符号が演算子トークンに畳まれるため)。
-;   ・型接尾辞 %/!/# は読み飛ばす (内部表現は整数/単精度の共通 6 桁精度)。
+;   ・型接尾辞 %/!/# は読み飛ばす (倍精度は pnd_class が先に振り分ける)。
 ;   入力: X = 数字/'.' の先頭。出力: FAC1 = 値, X = リテラル直後。
 ;   破壊: A,B,CC。U/Y 温存 (LET の VARPTR)。スクラッチ: pn_mant/pn_msat/
-;   pn_isflt ($43-$48, float コア呼出し前のみ) と pn_dexp ($20)。
+;   pn_isflt と pn_dexp (float コア呼出し前のみ)。
 ;------------------------------------------------------------------------------
 pn_decimal:
                 BSR     pnd_class       ; 倍精度リテラル (8桁以上/#/D指数) は
@@ -1828,19 +1768,24 @@ pnd_frac_lp:                            ; --- 小数部 ---
                 BRA     pnd_frac_lp
 ;------------------------------------------------------------------------------
 ; nxt_digit — X の 1 文字が十進数字なら取り込む (数値定数の読取で共用)
-;   出力: C=0 … A = 数値 (0-9)、X は 1 文字ぶん前進
-;         C=1 … A = その文字 (数字でない)、X は不変
+;   出力: C=0 … A = 数値 (0-9)、X は数字の次へ前進 (間の空白も読み飛ばす)
+;         C=1 … A = その文字 (数字でない)、X は空白を読み飛ばした位置
 ;   単精度・倍精度の整数部/小数部/指数部の 5 箇所で使う。破壊: A,CC (B/Y/U 温存)。
 ;------------------------------------------------------------------------------
 nxt_digit:
                 LDA     ,X
                 CMPA    #'0'
-                BLO     ndg_no
+                BLO     ndg_lo
                 CMPA    #'9'
                 BHI     ndg_no
                 LEAX    1,X
                 SUBA    #'0'            ; 借りが立たないので C=0 (= 数字)
                 RTS
+ndg_lo:
+                CMPA    #' '            ; 数字の並びの途中の空白は読み飛ばす
+                BNE     ndg_no          ;   (参考書籍。DATA の値も同じ)
+                LEAX    1,X
+                BRA     nxt_digit
 ndg_no:
                 ORCC    #$01            ; C=1 (= 数字でない)
                 RTS
@@ -1848,8 +1793,7 @@ ndg_no:
 ;------------------------------------------------------------------------------
 ; pn_exp_tail / pn_sfx_skip — 数値定数の指数部と型接尾辞の読取 (単精度・倍精度で共用)
 ;   数値定数は指数記号 (単精度 E / 倍精度 D) に
-;   続けて符号と指数を書け、末尾に型宣言文字 (% ! #) を付けられる。読み取りは
-;   どちらの精度でも同じなので 1 本にまとめてある。
+;   続けて符号と指数を書け、末尾に型宣言文字 (% ! #) を付けられる。
 ;   pn_exp_tail: X = 指数記号の位置。符号と指数を読んで pn_dexp へ加算し、
 ;                そのまま型接尾辞の読み飛ばしへ続ける。
 ;   pn_sfx_skip: X = 型接尾辞が来うる位置。あれば 1 字消費する。
@@ -1877,10 +1821,15 @@ pnx_edig:
 pnx_elp:
                 BSR     nxt_digit       ; A=0-9 / C=1 で数字でない (A=その文字)
                 BCS     pnx_edone
-                PSHS    A
+                CMPB    #10             ; 3 桁目以降は 100 で頭打ち (十進スケールは
+                BHS     pnx_big         ;   8 ビット。100 以上は乗除の途中で Overflow か
+                PSHS    A               ;   0 になるので値は変わらない)
                 LDA     #10
                 MUL                     ; D = 10 * 指数値
                 ADDB    ,S+             ; + 桁
+                BRA     pnx_elp
+pnx_big:
+                LDB     #100
                 BRA     pnx_elp
 pnx_edone:
                 PULS    A               ; 指数符号
@@ -2039,9 +1988,8 @@ pad_sat:
                 RTS
 
 ;------------------------------------------------------------------------------
-; fdc_post: fdiv_core の仮数組み立て+指数/符号格納 (本体はプール。
-;   丸め位置は単精度の有効桁 (24bit) の直下 (32bit で丸めて下位 8bit を格納時
-;   に切り捨てると、商が 1ulp 小さく出る場合がある)。
+; fdc_post: fdiv_core の仮数組み立て+指数/符号格納。
+;   丸め位置は単精度の有効桁 (24bit) の直下。
 ;   入力: fdv_q = 商 32bit, fdv_rem = 剰余, fdv_m1 = 除数仮数,
 ;         スタック [0,S:1,S]=eres(16bit), [2,S]=符号バイト(bit0=int_q)。
 ;   fdiv_core から JMP で継続 (スタックは fdiv_core の積んだまま)。
@@ -2102,8 +2050,7 @@ fdc_zero:
                 JMP     flt_zero1
 ;------------------------------------------------------------------------------
 ; EXP/LOG/ATN 用定数 (展開形 6B: 指数 bias128, 仮数32bit 先頭1明示, 符号)
-;   本体は 7t_color_video.inc (impl_fn_exp/log/atn)。当区間の空き不足のため
-;   定数表のみ本プールへ配置。
+;   本体は 7t_color_video.inc (impl_fn_exp/log/atn)。
 ;------------------------------------------------------------------------------
 c_log2e:        FCB     $80,$B8,$AA,$3B,$29,$00  ; log2(e) = 1.44269504
 c_ln2:          FCB     $7F,$B1,$72,$17,$F8,$00  ; ln(2) = 0.693147181
@@ -2161,8 +2108,6 @@ pool_str_float:
                 STX     pc_capptr
                 BSR     psf_disp        ; 単精度/倍精度の整形出力を捕捉
                 CLR     pc_capt
-                ; 注: STRPTR ($005A) は FAC2 とアドレス重複のため、print が FAC2 を
-                ;     使い終えた後に設定する (FACTYPE は print で不変)
                 BSR     psf_base
                 STX     STRPTR
                 LDD     pc_capptr
@@ -2186,23 +2131,15 @@ psf_disp:
 psd_s:
                 JMP     print_float
 
-;------------------------------------------------------------------------------
-; INT(x) / FIX(x) の本体は 7t_numchk.inc に置く (置き場所は容量の都合)。
-;   参照はラベル経由のみ。
-;------------------------------------------------------------------------------
-
-                include "7t_double4.inc"        ; 倍精度表示 (プール)
+                include "7t_double4.inc"        ; 倍精度表示
 
 ;------------------------------------------------------------------------------
 ; LOAD ",R" 支援ルーチン群 (impl_load から参照)。
-;   impl_load が属する 当区間は空きが無いため、追加ロジックを本プール
-;   (空きプール) へ置き、impl_load 側は同サイズの呼び出しに留める。
 ;
 ; impl_load_fname_r — ファイル名解析 + ",R" (ロード後自動実行) 解析。
 ;   まず impl_parse_fname でファイル名/装置を確定し、続く ",R" を解析して
 ;   mlm_run (0=無/1=有) に記録する。X は引数末尾へ進めて返す。
-;   参考書籍の LOAD 構文: LOAD "name"[,R] のカンマ 1 個直後が
-;   'R'/'r' のときのみロード後自動実行を指定する。
+;   LOAD "name"[,R] のカンマの直後が 'R'/'r' のときロード後自動実行 (参考書籍)。
 ;------------------------------------------------------------------------------
 impl_load_fname_r:
                 JSR     impl_parse_fname        ; ファイル名 → cmt_filename/dl_device, X 前進
@@ -2228,20 +2165,16 @@ ilfr_done:
 ;   ロードが正常終了したテープ/ディスク両経路の末尾から入る。
 ;   mlm_run=1 (",R" 指定あり) なら、プログラムを先頭から自動実行する。
 ;   実行は impl_exec_prog (変数/配列テーブル・FOR/GOSUB スタック・DATA ポインタを
-;   初期化してから先頭行を実行) を用いる。LOAD ",R" は
-;   ロード直後に RUN 相当を行い、変数を初期化する。
+;   初期化してから先頭行を実行) を用いる。
 ;   mlm_run=0 のときは C=0 で復帰する (ロードのみ)。
 ;------------------------------------------------------------------------------
 il_ret_run:
                 ; 読込の完了時に変数領域の管理位置を本文末尾へ揃える。
                 ;   LOAD は読込完了の時点で全変数を消去する (参考書籍)。
                 ;   スカラ領域の起点 VARTAB は各経路が本文末尾に
-                ;   設定済なので、ここで配列領域の起点 ARYTAB と末尾 STREND を
-                ;   VARTAB へ揃える。揃えないと読込前の古い位置が残り、変数の
-                ;   記録が本文へ重なる。
+                ;   設定済なので、ここで ARYTAB と STREND を VARTAB へ揃える。
                 JSR     vars_clear_all
-                ; ロードで本文が入れ替わったので CONT の再開位置を破棄する。
-                ; 残しておくと、入れ替わる前の本文の途中を指したポインタで CONT が走り出す。
+                ; CONT の再開位置を破棄する。
                 JSR     cont_clear
                 LDA     mlm_run
                 BEQ     ilrr_norun
@@ -2257,10 +2190,9 @@ ilrr_norun:
 
 ;------------------------------------------------------------------------------
 ; savem_finish — SAVEM 本体の末尾 (impl_savem から JMP で入る)。
-;   impl_savem が属する区間には空きが無いため、機械語イメージ
-;   出力の末尾 (終端レコード + EOF ブロック + モータ OFF + 復帰) を本プールへ置く。
+;   機械語イメージ出力の末尾 (終端レコード + EOF ブロック + モータ OFF + 復帰)。
 ;   前提: スタックに復帰用 X が積まれている / svm_exec = 実行開始アドレス。
-;   終端レコード ($FF 00 00 execHi execLo) と EOF ブロック (type=2) を書き、
+;   終端レコード ($FF 00 00 execHi execLo) と EOF ブロック (type=$FF) を書き、
 ;   モータ OFF・PULS X して RTS する。cmt_hdr_buf を 5B スクラッチに流用。
 ;------------------------------------------------------------------------------
 savem_finish:
@@ -2273,11 +2205,8 @@ savem_finish:
                 LDD     svm_exec
                 STA     ,U+                     ; execHi
                 STB     ,U+                     ; execLo
-                LDD     #$0105
-                STD     cmt_blk_type    ; 種別 1 / 長さ 5 (隣り合うので 16 ビットで置く)
-                LDD     #cmt_hdr_buf
-                STD     sv_ptr
-                JSR     cmt_write_block
+                LDD     #$0501          ; A = 長さ 5, B = 種別 1
+                JSR     sv_wr_blk
                 ; --- エンドブロック (種別 $FF。参考書籍) ---
                 LDA     #$FF
                 STA     cmt_blk_type
@@ -2286,13 +2215,11 @@ savem_finish:
                 JSR     cmt_motor_off           ; モーター OFF
                 PULS    X,PC
 
-                ; 単精度: 4B 内部形式 → FAC1 展開形 / 倍精度: 8B 直読み
 ;------------------------------------------------------------------------------
 ; 倍精度変数の値スロット入出力。
 ;   変数表・配列の値サイズは型別表 var_size_tbl が倍精度に 8B を割り当てる。
 ;   倍精度の値スロットは単精度経路 (unpack_sng / pack_sng) を通さず、FAC1 の
 ;   倍精度パック 8B と直に往復させて、格納・複製ともに精度を落とさない。
-;   本体はラベル参照のみで位置依存が無いため当プールへ置き、呼出元
 ;   (impl_get_var_val / impl_assign_var) からは JMP 1 個で入る。
 ;------------------------------------------------------------------------------
 ; pool_var_load: U 指す値スロット → FAC1。VARTYP が倍精度なら 8B 直読み。
@@ -2310,7 +2237,6 @@ pvl_dbl:
                 PULS    X
                 JMP     dw_t2           ; FACTYPE=2 を立てて復帰 (共通尾部)
 
-                ; 単精度: FAC1 → 4B 内部形式 / 倍精度: 8B 直書き
 ; pool_var_store: FAC1 → U 指す値スロット。VARTYP が倍精度なら 8B 直書き。
 ;   破壊: A,B,CC。X/U 温存。
 pool_var_store:
@@ -2330,7 +2256,7 @@ pvs_dbl:
 ; tok_match_fn2 — 二次関数予約語 (kw_2nd_fn_tbl) のトークン化。走査本体は
 ;   7t_tokenizer.inc の tmk_outer を共用し、トークン値は TOK_2ND_FN ($B4) 起点。
 ;   表のアドレスが関数語表より後ろにあるため、走査本体末尾の判定で $FF 前置つきの
-;   2 バイトトークンとして出力される。当区間に余白が無いため本プールへ置いた。
+;   2 バイトトークンとして出力される。
 ;   出力: 成功 → Z=1, X=語末次, U に $FF tok を書込/前進 / 失敗 → Z=0, X/U 不変。
 tok_match_fn2:
                 PSHS    Y,X
@@ -2352,8 +2278,7 @@ disk_crlf:
                 JMP     impl_putchar
 
 ; pool_fn_dispatch — 関数トークン ($FF xx) の呼び分け。7t_expr.inc の
-;   epr_nofeconst から JMP で入る (当該区間に余白が無いため本プールへ置いた。
-;   参照はラベル経由のみで位置依存なし)。
+;   式プライマリから JMP で入る。
 ;   入力: X = $FF を指す位置 / 出力: FAC1 = 関数値, X = 引数の直後。
 ;   関数語表の語は $FF $80- の連番で関数ジャンプ表 fn_jt を引く。二次関数語
 ;   ($FF $B4-) は別系列で fn_jt の外にあるため、手前で振り分ける。
@@ -2366,9 +2291,7 @@ pool_fn_dispatch:
                 TFR     A,B
                 ASLB
                 ; ハンドラアドレスを Y に求める (X は引数走査に使うため温存)。
-                ; 呼出後の X を関数トークン直後 (= 引数の '(' の手前) へ戻すと、
-                ; PRINT 等が引数を二度評価してしまう。ハンドラ復帰後の X
-                ; (引数の直後) をそのまま返す。
+                ; ハンドラ復帰後の X (引数の直後) をそのまま返す。
                 PSHS    X               ; 入力ポインタ退避
                 LDX     #fn_jt
                 LDX     B,X             ; X = ハンドラアドレス
@@ -2380,9 +2303,7 @@ pfd_ret:
                 ; impl_eval_expr_p が保存した引数直後の位置を復元する。
                 LDX     fn_xsave
                 RTS
-; 二次関数語は LPOS 1 語だけである。参考書籍の LPOS(n) は印字装置 n の
-;   現在の桁位置を返す。本実装は印字出力を行単位でそのまま送り出す作りで桁位置を
-;   保持しないため、書式どおり引数を受け取ったうえで常に行頭 0 を返す。
+; 二次関数語は LPOS 1 語だけである。引数を受け取り、常に 0 を返す。
 pfd_fn2:
                 JSR     skip_sp_lparen
                 BNE     pfd_bare
@@ -2395,9 +2316,4 @@ pfd_zero:
                 BRA     pfd_ret
 
 
-;------------------------------------------------------------------------------
-; 以降の CMT 書込/ロード系ルーチン群の置き場所は容量の都合で決めた空きプールで、
-; 参照はラベル経由のみ。アドレスは固定していない。
-;------------------------------------------------------------------------------
-;------------------------------------------------------------------------------
 

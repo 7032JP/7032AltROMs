@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM CIRCLE の開始位置・終了位置 (第 5・第 6 引数)。両方を省略したときと、
 2 REM 開始位置と終了位置に同じ値を書いたときは、いずれも全周を描く。異なる値を
 3 REM 書いたときは、その 2 点を結ぶ弧だけを描く。円周上の 4 点を POINT

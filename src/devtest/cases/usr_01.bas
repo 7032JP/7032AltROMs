@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM DEF USR / USR / EXEC。機械語 (D 2,X 読出し + 3 加算 + 2,X 書戻し + 復帰) を
 2 REM POKE で置き、引数の受渡しと戻り値を確かめる。番号違い (USR3)・番号省略
 3 REM (USR = USR0)・未定義番号 (誤り 5)・EXEC からの復帰も確かめる。

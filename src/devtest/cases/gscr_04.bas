@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM 画面比較: PAINT。枠の中の塗り、境界色の省略 (塗色が境界色)、
 2 REM 境界色の複数指定 (異なる色の 2 辺で囲まれた領域の塗り)。
 10 CLS

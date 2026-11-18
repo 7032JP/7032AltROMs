@@ -5,15 +5,7 @@ str_date_stub:  FCC     "00/00/00"      ; DATE$ の代入前に返す値 (8 文�
 
 ;=== データ変数 ===
 ; (rnd_seed / trace_flag / cur_fg_color / cur_bg_color / gcur_x / gcur_y /
-;  mml_* / sym_buf は RAM ($0180- / $0380-) に EQU で置く。ROM オーバレイ
-;  有効中は $8000-$FBFF への書込が保持されず、ROM 側に置くと「常に初期値」に
-;  化けるため。初期値設定は init_ram_vars が行う)
-; CMT 作業変数: RAM に配置 (EQU のみ。ZMB/FCB は ROM に置けないので定義を持たない)
-; cmt_filename  EQU $0084 (定義は EQU セクションにある)
-; cmt_blk_type  EQU $0095
-; cmt_blk_len   EQU $0096
-; cmt_load_ptr  EQU $0097
-; cmt_chk_sum   EQU $0099
+;   mml_* / sym_buf は RAM に置く。初期値設定は init_ram_vars が行う)
 
 ;=== 二次コマンド予約語テーブル ===
 kw_2nd_tbl:
@@ -30,28 +22,23 @@ kw_2nd_fn_tbl_end:
 ;==============================================================================
 ; サブシステム連携
 ;
-; BUSY ポーリングプロトコル:
-;   1. パラメータを $FC83+ に設定
-;   2. コマンドコードを $FC82 に書く
-;   3. $FD05 の bit7 (BUSY) が 0 になるまでポーリング
-;      (サブ CPU がコマンドを処理し $D40A を読むと BUSY クリア)
+; 受け渡しの手順は impl_sub_send_cmd の頭書きのとおり (HALT の下で共有 RAM と
+; ステージングの間を 128 バイトずつ複写し、SH_CMD が 0 になるまで待つ)。
 ;==============================================================================
 
-; impl_sub_send_cmd: ステージング ($00DD-) に組み立てたコマンド/パラメータを
+; impl_sub_send_cmd: ステージング (SUBSTG_BASE = $0100 から 128B) に組み立てたコマンド/パラメータを
 ;   サブシステムへ発行する。FM-7 のデュアルポート共有 RAM はサブ CPU を HALT
 ;   ($FD05 bit7) している間だけメイン CPU から有効にアクセスできるため、
 ;   次の手順で安全に受け渡す:
 ;     1. サブ CPU を HALT し、HALT 確立 ($FD05 bit7=1) を待つ
-;     2. ステージング 16B → 共有 RAM ($FC80-) へ複写
+;     2. ステージング 128B → 共有 RAM ($FC80-) へ複写
 ;     3. サブ CPU を RUN ($FD05=0) させてコマンドを処理させる
 ;     4. 完了判定: 共有 RAM の SH_CMD ($FC82) がサブにより 0 へクリアされるまで
 ;        待つ。読み取りは必ず HALT 下で行い、未完なら RUN して進行させる。
-;     5. 完了したら HALT 下で 共有 RAM 16B → ステージングへ読み戻し、RUN して復帰
+;     5. 完了したら HALT 下で 共有 RAM 128B → ステージングへ読み戻し、RUN して復帰
 ;   壊すレジスタ: なし (A/B/X/U を退避・復元)
 ; impl_sub_send_fast: 事前待ちなしの即送入口。コンソール出力 ($03) 専用。
-;   利用者の機械語がサブ CPU を占有していると BUSY が立ったままになるので、
-;   $03 まで事前待ちさせると PRINT が 1 文字ごとに上限待ちになる。
-;   $03 は即送 + 後段の 255 回上限打切りとする。
+;   $03 は BUSY の事前待ちなしで即送し、後段の 255 回上限で打ち切る。
 impl_sub_send_fast:
                 PSHS    A,B,X,U
                 BRA     issc_send
@@ -60,11 +47,7 @@ sub_send_cmd_a:
 impl_sub_send_cmd:
                 PSHS    A,B,X,U
                 ; --- 0. 先行コマンドの完了待ち ---
-                ;   サブが前コマンドを処理中 (BUSY = $FD05 bit7) のまま共有 RAM 128B を
-                ;   上書きすると、利用者の機械語が $3F で共有 RAM 領域内に置いて実行中の
-                ;   ルーチンを踏み潰し、サブ CPU が暴走する。BUSY が解けてから書く。
-                ;   待ちは無制限とする: 非 $03 の完了待ち (ssc_poll, B=0) も無制限である。
-                ;   有界にすると、同領域内で長く走るルーチンを打ち切って上書きしてしまう。
+                ;   BUSY が解けてから書く。待ちは無制限。
 issc_busy_wait:
                 LDA     PORT_SUBCPU             ; $FD05 bit7 = BUSY
                 BMI     issc_busy_wait          ; 1 の間は待つ (0 → 送信可)
@@ -84,16 +67,11 @@ issc_send:
                 CLR     PORT_SUBCPU             ; $FD05 = 0 (RUN)
                 ; --- 4. SH_CMD が 0 になるまで完了待ち ---
                 ;   B = コンソール出力 ($03) の完了ポーリング残回数。B=0 は「上限なし」。
-                ;   サブシステムの手順では、コンソール文字送出は HALT で共有 RAM へ積んで
-                ;   RUN すれば足り、完了フラグの待ち合わせを要しない (次コマンド発行時に
-                ;   $FD05 bit7 で同期する)。利用者の機械語がサブ CPU を占有
-                ;   すると SH_CMD が非ゼロのままになり PRINT/putchar が無限待ちに陥るため、$03 は
-                ;   上限で打ち切る。上限 (255) は通常の出力の完了に要する回数を十分に覆う値。
-                ;   キー入力 ($04) 等の本来ブロックする命令は B=0 のまま無制限に待つ
-                ;   (打ち切ると入力を取りこぼす)。
+                ;   コンソール文字送出は完了の待ち合わせを要しないので、$03 は上限で打ち切る。
+                ;   キー入力 ($04) 等は B=0 のまま無制限に待つ。
                 LDA     SUBCMD_CMD              ; 発行コマンド ($0102, = $FC82 相当)
                 CMPA    #$03                    ; コンソール出力?
-                LBNE    ssc_waitb               ; 非 $03 → BUSY 先行待ち (プール側)。
+                LBNE    ssc_waitb               ; 非 $03 → BUSY 先行待ち。
                                                 ;   BUSY ($FD05 bit7) が降りるまで HALT を
                                                 ;   一切掛けずに待ち、降りてから ssc_poll の
                                                 ;   HALT 検証 (SH_CMD=0 確認) へ合流する
@@ -116,32 +94,26 @@ ssc_repoll:
                 BRA     ssc_poll
 ssc_done:
                 ; --- 5. 共有 RAM → ステージング (結果読み戻し, HALT 中) ---
+                ;   読み戻す前に、命令の処理中に置かれた割込原因 (相対 1) を取り込んで 0 に戻す。
+                ;   次の発行の複写 (手順 2) で、取り込み済みの原因を共有 RAM へ書き戻さないため
+                JSR     kap_take
                 LDX     #SUBCMD_BASE
                 LDU     #SUBSTG_BASE
                 BSR     ssc_copy_blk
-                ; --- 6. サブを待機ループ先頭へ戻し BUSY を解放させる (参考書籍準拠) ---
-                ;   コマンド処理後、サブをそのまま RUN するだけでは、サブはコマンド
-                ;   待ちループ内の任意位置から再開し待機ループ先頭の BUSY 解放を
-                ;   通らないことがある。その結果 $FD05 bit7 (BUSY) が立ったまま残り、
-                ;   機械語が $FD05 bit7=0 を待つ際に永久待ちに
-                ;   なる。SH_CMD ($D382) を 0 にし ATN ($D380 bit7) を立ててから RUN
-                ;   すると、サブは待機ループ先頭へ戻り ATN と BUSY をクリアして再待機
-                ;   する。続けて $FD05 bit7=0 を確認してから復帰する。
-                ;   (HALT 中なので共有 RAM $FC80- へ直接書ける)
+                ; --- 6. サブを待機ループ先頭へ戻し BUSY を解放させる ---
+                ;   SH_CMD を 0 にし ATN を立ててから RUN し、BUSY の解放を確かめて戻る。
                 BSR     ssc_atn_run             ; ATN を立てて RUN → BUSY 解放待ち
-                JSR     ssc_chk_err             ; 応答のエラーコードを写す (プール)
+                JSR     ssc_chk_err             ; 応答のエラーコードを写す
                 PULS    A,B,X,U,PC
 ssc_ff:
                 BSR     ssc_run_wait            ; 打ち切り時は ATN を立てずに RUN
                 PULS    A,B,X,U,PC
 
-; >>FOLD ssc_atn_run
 ;------------------------------------------------------------------------------
 ; ssc_atn_run / ssc_run_wait — サブ CPU 側を待機ループ先頭へ戻す定型。
 ;   ssc_atn_run  : SH_CMD を 0 にし SH_ERR の ATN を立ててから ssc_run_wait へ。
 ;   ssc_run_wait : RUN させ、BUSY ($FD05 bit7) の解放を上限つきで待つ。
 ;   コンソール出力 / 図形コマンド発行 / テープ側の戻りの 3 か所で使う共通の定型。
-;   直前は PULS ..,PC なので、この定義へ落ち込む経路は無い。
 ;   破壊: A, X。
 ;------------------------------------------------------------------------------
 ssc_atn_run:
@@ -159,7 +131,6 @@ sarw_lp:
                 BNE     sarw_lp
 sarw_done:
                 RTS
-; <<FOLD ssc_atn_run
 
 ; ssc_halt: サブ CPU を HALT し、HALT 確立 ($FD05 bit7=1) を待つ
 ssc_halt:
@@ -171,9 +142,8 @@ ssc_halt_wait:
                 RTS
 
 ; ssc_copy_blk: X→U へ SUBSTG_LEN バイト複写。壊す: B,X,U (呼出側で退避済)
-;   複写は 2 バイト単位 (Y 経由)。HALT 中の複写はサブ CPU 側の走行をそのまま
-;   止めるので、複写を速くすることが発行のたびに直に効く。
-;   B は「残り対数」(呼出側は半分を渡す)。
+;   複写は 2 バイト単位 (Y 経由)。B は残りの回数 (ssc_copy_blk は SUBSTG_LEN/2 を
+;   入れる。ssc_cp_lp から入るときは呼出側が B を渡す)。
 ;   Y は退避して復元する (impl_sub_send_cmd は Y を保存しない約束のため)。
 ssc_copy_blk:
                 LDB     #SUBSTG_LEN/2
@@ -194,8 +164,7 @@ impl_sub_init:
                 ; 送出は WIDTH / CONSOLE と同じ con_init_send に任せる。全パラメータ
                 ;   (背景色・消去指定・アトリビュート・機能キー行) を明示し、
                 ;   桁数・行数・スクロール範囲の控え (con_cols / con_rows /
-                ;   con_wtop / con_wrows) も同時に確定する。控えを別々に置くと、
-                ;   起動直後の CONSOLE が「現在の設定」を取り違える。
+                ;   con_wtop / con_wend) も同時に確定する。
                 ; アトリビュートは現在の文字色 (cur_fg_color)。本ルーチンより先に
                 ;   init_ram_vars が 7 (白) を入れてある。
                 LDD     #40*256+CON_ROWS ; 40 桁 × 20 行 (起動時の既定)
@@ -206,7 +175,7 @@ impl_sub_init:
                 STA     con_mono
                 JSR     con_init_send
                 ; TAB 停止位置を 8 桁ごとに設定する (参考書籍)
-                JMP     tab_set_init    ; 末尾呼出 (プール。RTS は送出側)
+                JMP     tab_set_init    ; 末尾呼出 (RTS は送出側)
 
 put_zero:                               ; "0" を 1 文字出す
                 LDA     #'0'
@@ -247,7 +216,7 @@ ipc_nowrap:
                 PULS    A
                 ; impl_putraw: A のバイトを PRINT_COL 更新なしでコンソール
                 ; ($03) へ直接送る生出力。LOCATE/COLOR がコンソール制御コード
-                ; ($12 位置指定 / $11 文字色指定) を送るのに使う。A/B/X/U 保存。
+                ; ($12 位置指定 / $11 文字色指定) を送るのに使う。B/X/U 保存。
 impl_putraw:
                 STA     SUBCMD_P2           ; $FC84 = 文字コード (A を先に退避)
                 LDA     #$03
@@ -257,14 +226,14 @@ impl_putraw:
                 JMP     impl_sub_send_fast  ; 末尾呼出 ($03 は即送入口, RTS は send 側で)
                 ; ipc_lf: LF の後に SF オーダ ($11 + 現在の文字色) を送り、新しい行を
                 ; 現在の文字色のフィールドにする (参考書籍。
-                ; 1 行入力 $04 は変更フィールドを行の単位で返すため)。A 保存。
+                ; 1 行入力 $04 は変更フィールドを行の単位で返すため)。A は impl_putraw の
+                ; 戻り値のまま (入口の A は保たない)。
 ipc_lf:
                 BSR     impl_putraw         ; LF
                 PSHS    A
                 JSR     ic12_send           ; SF
                 PULS    A,PC
 
-; impl_print_str は容量の都合で 7t_deffn.inc のプールに置く。
 
 ; impl_sub_inkey: 非ブロッキング INKEY
 ;   cmd_29_inkey: $D383 = CF (バッファクリアフラグ), 出力: $D383 = キーコード, $D384 = 有無
@@ -280,9 +249,6 @@ impl_sub_inkey:
 isi_ret:
                 RTS
 
-; --- 空きプール ($C174-$C17A, 7 byte) ---
-;   ここにはブロッキング INKEY を置かない (入力待ちは impl_input_line が
-;   subsys $04 へ委譲するため、呼出元が無い)。
 ; 「JSR impl_eval_expr / JSR impl_fac_to_int」の共通ヘルパ (呼出側は 3B の JSR 1 本)。
 eval_to_int:
                 JSR     impl_eval_expr
@@ -292,7 +258,7 @@ eval_to_int:
 ;   割当表は物理シリンダ1/サイド0 セクタ1。先頭 5 バイトはヘッダで、
 ;   エントリは +5 からクラスタ番号順に並ぶ (動作観察):
 ;     値 < $98 (152) … 次クラスタ番号
-;     $C0-$C7        … このクラスタが最終 (下位 = 使用セクタ数)
+;     $C0-$C7        … このクラスタが最終 (下位 3 ビット = 使用セクタ数 - 1)
 ;     $FD/$FF ほか   … 空き/未使用 (鎖の続き無し)
 ;   断片化したファイルでも隣の別ファイルの領域を取り込まないよう、クラスタの
 ;   連番を仮定せず割当鎖を辿る。
@@ -396,16 +362,14 @@ iic_skip:
 iic_ret:
                 RTS
 
-                ; 実行ループへ再入 (戻らない) (ここへ展開)
 ;==============================================================================
-; ic_go — CONT の実行ループ再入 (impl_cont から JSR。本体はこのプールに置く)
+; ic_go — CONT の実行ループ再入 (impl_cont から入る)
 ;   再開位置は CONTREC (行レコード先頭) + CONTPTR (作業列内の位置) の組。
 ;   CONTREC の行を作業列へ復元 (再変換は決定的なので CONTPTR は同値で有効) し、
 ;   行文脈 (CURLINE_PTR / CURLIN) を戻して iep_stmt_new へ入る。
 ;   走り切った後 (CONTREC = 終端レコード) の CONT は何もしない。
-;   EXEC_SP を張り直すのは、実行ループ終端 (iep_end) の RTS が呼出元
-;   impl_cont へ戻れるようにするためと、ON ERROR トラップ / CHAIN の巻き戻し
-;   基準を CONT 後の実行に合わせるため。
+;   EXEC_SP を張り直すのは、ON ERROR トラップ / CHAIN の巻き戻し基準を
+;   CONT 後の実行に合わせるため。
 ;   FOR / GOSUB のスタックと変数は触らないので、停止前の文脈がそのまま続く。
 ;==============================================================================
 ic_go:
@@ -430,7 +394,7 @@ icg_end:
 ;==============================================================================
 
 impl_error_handler:
-                CLR     pc_capt         ; 捕捉モード中の異常時もコンソール復帰 (堅牢化)
+                CLR     pc_capt         ; 捕捉モード中の異常時もコンソール復帰
                 STB     ERRNUM
                 LDD     CURLIN
                 STD     ERRLIN
@@ -442,8 +406,7 @@ ieh_report:
                 JSR     ieh_trap_check  ; ON ERROR GOTO 有効化済ならハンドラ行へ (戻らない)
                 ; 通常エラーは演奏中断の対象外 (参考書籍)。
                 ; 表示前の行送りだけ行い、Break の中断経路は維持する。
-                ; エラー名は必ず行頭から始まり、その 1 行前を空ける。本区間は
-                ; 残余が 0 なので、その処理は呼出先 (プール) に置く。
+                ; エラー名は行頭から始まり、その 1 行前を空ける。
                 JSR     nl_blank
                 ; --- エラー名の表示 ---
                 ; 表示は <エラー名> In <発生行番号> の形で、番号は出さない。
@@ -457,9 +420,6 @@ ieh_report:
                 ; 番号や行番号の出力に使う print_uint16 は out_vec 経由で出力する。
                 ; 出力先のコンソールへの張り替えは ieh_trap_check の itc_no
                 ; (= エラーを表示する経路に確定した地点) で行っている。
-                ; 索引は「先に 0 起算へ寄せてから 2 つの帯に収まるかを見る」順で
-                ;   求める (閾値を並べて比べるのではなく、引いた後の値が帯に入るかで
-                ;   決める)。コード 0 は DECB で $FF に落ち、どちらの帯にも入らない。
                 LDB     ERRNUM
                 DECB                    ; 0 起算へ
                 CMPB    #26             ; 0..25 = コード 1..26
@@ -480,7 +440,7 @@ ieh_scan:
                 BRA     ieh_skip
 ieh_show:
                 JSR     print_str7
-                JMP     ieh_tail        ; 行番号付加と改行 (7t_startup.inc のプール)
+                JMP     ieh_tail        ; 行番号付加 (7t_deffn.inc)
 ieh_idx_bad:
                 LDB     #20             ; Unprintable Error (0 起算)
                 BRA     ieh_idx_ok
@@ -515,24 +475,14 @@ iep_loop:
                 ; CURLIN/CURLINE_PTR の更新も変換器が行い、X は変換済み
                 ; 本文の先頭 (作業列) を指して返る。
                 JSR     exec_conv_line
-                ; --- 文の先頭 (RESUME の再開位置) の記録について ---
-                ; CURIP は「今実行している文の先頭」を保持する。文の切れ目は
-                ; 行頭と ':' だけであり、IF ... THEN / ELSE で節へ落ちる所は
-                ; 切れ目ではない (参考書籍の RESUME の定義。RESUME は
-                ; エラーが起きた文をやり直すが、IF の節は IF 文の一部なので
-                ; 条件判定からやり直す)。よって CURIP を書くのは iep_stmt_new
-                ; = 行頭と ':' 直後だけに限り、ハンドラ復帰後は書かない。
-                ; 行を跨ぐ命令 (GOTO/GOSUB/RETURN/NEXT/CONT 等) は各ハンドラが
-                ; 自分で CURIP を設定するので、この方針で辻褄が合う。
+                ; CURIP は今実行している文の先頭を保持し、行頭と ':' 直後だけ書く (参考書籍)。
 iep_stmt_new:
                 STX     CURIP
                 STS     EXEC_SP         ; 文の切れ目の S = 枠列の先頭 (誤り捕捉の巻戻し先)
                 ; 文の切れ目で一時文字列を一括開放する。文をまたいで
                 ;   生きる一時は存在しない (代入は必ず恒久側へ複写するため)。
-                ; 開放は iep_stmt_gate (プール) 経由。INTERVAL の発生保留が
+                ; 開放は iep_stmt_gate 経由。INTERVAL の発生保留が
                 ;   あれば指定行への GOSUB をここ (文の切れ目) で分岐するため。
-                ;   直接モードの切れ目 (cmd_direct_stmt) は
-                ;   str_tmp_clear 直呼びで、分岐しない。
                 JSR     iep_stmt_gate
                 IFNDEF  STAGE_ALT_RAM
                 JSR     >HOOK_STMT      ; ステートメント実行フック
@@ -543,20 +493,17 @@ iep_stmt:
                 BEQ     iep_next_line
                 CMPA    #':'
                 BEQ     iep_stmt_new
-                ; $80 未満の生バイトはプールの ies_alpha が一手に裁く:
+                ; $80 未満の生バイトは ies_alpha が一手に裁く:
                 ;   空白 → 読み飛ばし / 英字 → 代入なら暗黙 LET、さもなくば
                 ;   Syntax Error / その他の生の記号で始まる文 → Syntax Error
                 ;   (動作観察)。
-                ; 当区間は残余が無いため、判定の本体はプールに置く。
                 CMPA    #TOK_FIRST
                 BHS     ies_tok
                 JSR     ies_alpha
                 BRA     iep_stmt        ; CURIP は文の先頭のまま
 ies_tok:
-                ; 関数トークン ($FF xx) が文頭に来た場合は文としては no-op。
-                ; 第2バイトまで読み飛ばす。$FF は TOK_2ND_FIRST 以上なので
-                ; 下の BHS iep_2nd より先に判定する。さもなくば iep_2nd が $FF 1バイト
-                ; だけ消費し、第2バイトが別の文トークンとして再解釈され誤動作する。
+                ; 関数トークン ($FF xx) の文形は fn_stmt_dispatch が振り分ける (INPUT・MID$・TIME$・DATE$・PEN)。
+                ; $FF は TOK_2ND_FIRST 以上なので下の BHS iep_2nd より先に判定する。
                 CMPA    #TOK_FUNC_PFX
                 BEQ     iep_fn_stmt
                 CMPA    #TOK_2ND_FIRST
@@ -565,9 +512,6 @@ ies_tok:
                 ; A = トークン値, X = トークン後のポインタ (入力データの先頭)
                 ; シンプルなディスパッチ: Y でハンドラ、X で入力ポインタ
                 PSHS    Y               ; Y を保存
-                ; テーブル索引は ABX で 16bit 加算する。B,X の符号付き
-                ; インデックス (-128..+127) では $C0 以上のトークンで
-                ; オフセットが負に化けて誤アドレスを読むため使わない。
                 SUBA    #TOK_FIRST      ; A = トークンインデックス (0..)
                 TFR     A,B             ; B = インデックス (符号無 0..255)
                 LDY     #cmd_jt         ; X 退避前にハンドラを Y へ求める
@@ -581,22 +525,15 @@ ies_tok:
                 PULS    Y               ; Y を復元
                 BRA     iep_stmt        ; CURIP は文の先頭のまま
 iep_fn_stmt:
-                ; TIME$= 代入は fn_stmt_dispatch が処理。他は第2バイト消費のみ (no-op)
                 JSR     fn_stmt_dispatch
                 BRA     iep_stmt
 iep_2nd:
-                ; ここへは直前の CMPA #TOK_2ND_FIRST / BHS でしか来ないので
-                ; A < TOK_2ND_FIRST は起こり得ないので、ここに再判定
-                ; (CMPA #TOK_2ND_FIRST / BLO iep_stmt) は置かない。
                 CMPA    #TOK_2ND_LAST
                 BHI     iep_stmt
                 JSR     call_cmd2       ; 二次コマンドのハンドラ呼出 (共通化)
                 BRA     iep_stmt
 iep_next_line:
-                ; 次行レコードへ進む。終端マーカ (リンクのワードが $0000) の検査は
-                ; iep_loop が行うので、そこへ戻して一元化する (リンク先を無検査で
-                ; 行レコード扱いすると、END 無しプログラムの終端で変数領域を
-                ; トークンとして誤実行する)。
+                ; 次行レコードへ進む。終端マーカの検査は iep_loop が行う。
                 LDX     CURLINE_PTR
                 LDX     ,X              ; 次行ポインタ
                 ; --- 直接モードの行の終端 ---
@@ -606,7 +543,7 @@ iep_next_line:
                 LBMI    warm_start
                 BEQ     iep_end         ; リンク=0 (防御的)
                 BRA    iep_loop        ; リンク=0 (終端マーカ) は iep_loop が検出
-; pool_gr_opts (続き 4/4): 既定機能の補填と復帰 (本体は 7t_startup.inc)
+; pool_gr_opts の続き: 既定機能の補填と復帰
 pgo_nofn:
                 CLRB                                ; 機能の既定値 (FUNC_PSET = 0)
 pgo_ret:

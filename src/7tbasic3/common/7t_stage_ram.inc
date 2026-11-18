@@ -1,6 +1,7 @@
 ; SPDX-License-Identifier: MIT
 ; Copyright (c) 2026 Naomitsu.Tsugiiwa
-; 保守用 (ワーク RAM の別配置を組むための未定義スイッチ)。連続参照と共用を保ち、ブロックの大きさから順次割付する。
+; ワーク RAM を別の配置に取る構成 (STAGE_ALT_RAM を定義したときだけ取り込む。配布 ROM の
+; 組み立てでは使わない)。区画の起点を置き、ブロックの大きさから順次割付する。
 STAGE_PTR          EQU     $0002
 STAGE_NUMBER       EQU     STAGE_PTR+44
 STAGE_IO           EQU     STAGE_NUMBER+45

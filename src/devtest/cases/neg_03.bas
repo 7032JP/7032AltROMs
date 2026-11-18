@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 ON ERROR GOTO 900
 20 E=0:X=1E38*10
 21 GOSUB 800

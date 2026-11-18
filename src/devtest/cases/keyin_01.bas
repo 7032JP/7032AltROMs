@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM 機械語 I/O サービスの KEYIN (リクエスト番号 21)。制御ブロックを &H6100、
 2 REM データバッファを &H6110 に置いて JSR [$FBFA] で呼ぶ。呼ぶ前に共有 RAM の
 3 REM 相対 3・4 とデータバッファを &H55 / &HAA で、エラーステータスとデータ

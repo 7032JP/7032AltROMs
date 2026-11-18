@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 P#=1.25
 20 Q%=41
 30 R#=2.75

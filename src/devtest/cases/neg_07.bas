@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 ON ERROR GOTO 900
 20 E=0:D=0
 30 D=1:FOR A=1 TO 1

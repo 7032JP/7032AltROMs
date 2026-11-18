@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 POKE &H6000,65
 20 PRINT PEEK(&H6000)
 30 PRINT CHR$(PEEK(&H6000))

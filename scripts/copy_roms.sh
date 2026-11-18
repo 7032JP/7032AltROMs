@@ -12,7 +12,7 @@
 #   対象 ROM の一覧と期待サイズは、このスクリプト内には持ちません。
 #   ビルド設定 config.mk の TARGETS / DATA_TARGETS / SIZE_<name> を唯一の
 #   情報源として読み取ります。ROM を追加・削除するときに直すのは config.mk
-#   だけです (一覧を二重に持つと片方だけ古くなる事故が起きるため)。
+#   だけです。
 #
 # 検査:
 #   1. 各 ROM が build/ に存在すること。
@@ -21,17 +21,6 @@
 #   4. コピー後の roms/*.rom の集合が、config.mk の TARGETS + DATA_TARGETS から
 #      導いた期待集合と完全に一致すること (余分な .rom が残っていても失敗する)。
 #   いずれかが不成立ならスクリプトは失敗し、SHA256SUMS は更新しません。
-#
-# 注意:
-#   - build/ は .gitignore 済みです。roms/ に置くのは、本プロジェクトがソースから
-#     ビルドした上記の ROM だけです。
-#   - roms/7tbasic3.rom (BASIC インタプリタ本体) も他の代替 ROM と
-#     同じく MIT ライセンス・ソース公開です。ソースは src/7tbasic3/ にあります。
-#     詳細は LICENSE を参照してください。
-#   - データ ROM 3 本 (roms/kanji.rom / roms/kanji2.rom / roms/dicrom.rom) は
-#     コードを持たないデータです。漢字フォント ROM 2 本の字形は、パブリック
-#     ドメイン宣言つきで配布されている第三者のビットマップフォント (fonts/) に
-#     由来します。詳細は docs/LEGAL.md §9 を参照してください。
 #
 # 使い方:
 #   1. 先に `make` でビルドしておく (build/*.rom が生成されます)。
@@ -144,8 +133,7 @@ if [ "${rc}" -eq 0 ]; then
   #   対象と行順は Makefile の deploy-roms と同一経路に揃える。すなわち
   #   config.mk の TARGETS + DATA_TARGETS 由来の一覧を LC_ALL=C で整列し、roms/ を前置して
   #   sha256sum へ渡す。シェルのグロブ (roms/*.rom) は展開順が実行環境の
-  #   照合順序に依存するため用いない (経路差で行順が揺れると、内容が同じでも
-  #   差分が出てリグレッションの誤検知を招く)。
+  #   照合順序に依存するため用いない。
   ( cd "${ROOT}" && printf '%s\n' "${expected_set}" | sed 's|^|roms/|' | xargs sha256sum > SHA256SUMS )
   printf "\n配布 ROM %s 本を %s に用意し、SHA256SUMS を更新しました。\n" "${count}" "${DEST_DIR}"
 else

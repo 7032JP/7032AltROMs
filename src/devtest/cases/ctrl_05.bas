@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 FOR K=1 TO 4
 20 ON K GOTO 100,110,120,130
 100 PRINT "ONE":GOTO 200

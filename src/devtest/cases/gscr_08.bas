@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM 画面比較: COLOR (既定の描画色)、COLOR=(パレット,カラー) のパレット
 2 REM 変更、SCREEN の書き込み面・表示面のマスク。面 1 だけへ描いた色 7 は
 3 REM 青面にだけ載り、表示面から面 1 を外すと青の寄与が消える。

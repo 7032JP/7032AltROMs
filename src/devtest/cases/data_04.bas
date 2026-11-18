@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 DIM M(3,3)
 20 FOR I=0 TO 3:FOR J=0 TO 3:M(I,J)=I*4+J:NEXT:NEXT
 30 FOR I=0 TO 3

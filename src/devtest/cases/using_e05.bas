@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 PRINT USING "##^^^^|";9.5E12
 20 PRINT USING "#.#^^^^|";9.99E37
 21 PRINT USING "##^^^^|";99.9

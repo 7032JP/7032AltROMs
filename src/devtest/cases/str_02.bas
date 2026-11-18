@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 PRINT ASC("A")
 20 PRINT CHR$(65)
 30 PRINT VAL("123")+1

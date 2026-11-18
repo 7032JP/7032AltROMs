@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM GCURSOR の座標の読取り。(x,y) にグラフィックカーソルを出し、移動キーで
 2 REM 動かして、改行キーが押された時点の座標を変数の組へ読み込む。組は 10 個まで
 3 REM 書け、末尾にパレットコードを添えられる。ここでは移動キーを打たずに改行キー

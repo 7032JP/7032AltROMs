@@ -15,7 +15,7 @@
 を同一の並びで同期出力する。表とジャンプ表の 1 対 1 対応が 1 語でもずれると
 即座に暴走するため、これらの表は手書き禁止であり、必ず本スクリプトで再生成する。
 
-並び規則 (本プロジェクトが独自に定めた導出規則):
+並び規則:
   - 先頭 1 文字 (バイト値の昇順) でまとめる
   - 同一先頭字の中は綴り長の降順、同長は綴り (バイト列) の昇順
 この規則は「同一表内で、ある語が別の語の先頭部分になる組は長い綴りを先に置く」
@@ -89,7 +89,7 @@ CMDS = [
     ("WIDTH",     "WIDTH",     "impl_width",        ""),
     ("UNLIST",    "UNLIST",    "impl_unlist",       ""),
     ("MON",       "MON",       "impl_mon",          ""),
-    ("LOCATE",    "LOCATE",    "impl_locate3",      "(第3引数 ,S 対応, free 領域)"),
+    ("LOCATE",    "LOCATE",    "impl_locate3",      "(第3引数 ,S 対応)"),
     ("CLS",       "CLS",       "impl_cls",          ""),
     ("CONSOLE",   "CONSOLE",   "impl_console",      ""),
     ("PSET",      "PSET",      "impl_pset",         ""),
@@ -111,7 +111,7 @@ CMDS = [
     ("LINE",      "LINE",      "impl_line",         ""),
     ("DEF",       "DEF",       "impl_def",          ""),
     ("POKE",      "POKE",      "impl_poke",         ""),
-    ("PRINT",     "PRINT",     "impl_print_disp",   "(@座標描画 振り分け, free 領域)"),
+    ("PRINT",     "PRINT",     "impl_print_disp",   "(@座標描画 振り分け)"),
     ("CONT",      "CONT",      "impl_cont",         ""),
     ("LIST",      "LIST",      "impl_list",         ""),
     ("CLEAR",     "CLEAR",     "impl_clear",        ""),
@@ -230,7 +230,7 @@ FUNC_PFX = 0xFF         # 関数語トークンの前置 (予約値)
 
 
 def sort_key(spelling: str):
-    """独自並びの整列キー: (先頭バイト, 綴り長の降順, 綴りバイト列)。"""
+    """整列キー: (先頭バイト, 綴り長の降順, 綴りバイト列)。"""
     b = spelling.encode("ascii")
     return (b[0], -len(b), b)
 
@@ -374,9 +374,8 @@ def emit_tokens_inc(cmds, fns, secs, with_spdx: bool) -> str:
     w(";   予約語表 (7t_startup.inc の kw_tbl / kw_fn_tbl、7t_runtime.inc の")
     w(";   kw_2nd_tbl / kw_2nd_fn_tbl) の各欄に 1 対 1 で対応する定数を、当ファイルへ")
     w(";   一元化する。実装側は生の 16 進即値を書かず、必ずここの名前を参照する。")
-    w(";   トークン値は予約語表の位置から機械的に決まる内部値であり、表の並びは")
-    w(";   本プロジェクトが独自に定めた規則 (先頭 1 文字でまとめ、同一先頭字の中は")
-    w(";   綴り長の降順 → 同長は綴り順) による。")
+    w(";   トークン値は予約語表の位置から機械的に決まる内部値。表の並びは先頭 1 文字で")
+    w(";   まとめ、同一先頭字の中は綴り長の降順 → 同長は綴り順。")
     w(";   値の並びは表の並びと同順。$ で終わる関数名は名前から $ を落とす。")
     w(";")
     w(";   本ファイルと予約語表・ジャンプ表は scripts/gen_7t_keywords.py が同期生成")

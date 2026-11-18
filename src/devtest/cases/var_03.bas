@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 SCORES=7
 20 PRINT SCORES
 30 ABCDEF=3

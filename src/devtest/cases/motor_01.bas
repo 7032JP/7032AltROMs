@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 MOTOR ON
 20 MOTOR OFF
 30 MOTOR

@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 PRINT "S"
 20 PRINT 1+2)
 30 PRINT "NOTREACHED"

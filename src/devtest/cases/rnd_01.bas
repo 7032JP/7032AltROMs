@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM RND / RANDOMIZE: 値域 0 以上 1 未満。RND(0) は直前の値の再取得。
 2 REM 負の引数は系列の初期化で、同じ負数からは同じ列が得られる。
 3 REM RANDOMIZE n も同じ種からは同じ列。値そのものは実装固有なので、

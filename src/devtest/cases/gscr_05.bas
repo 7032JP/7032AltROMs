@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM 画面比較: SYMBOL (拡大文字の描画。横倍率・縦倍率・色・角度)。
 10 CLS
 20 SYMBOL (8,8),"AB",1,1,7

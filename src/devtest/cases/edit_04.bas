@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 GOTO 40
 20 PRINT "NG20"
 40 GOSUB 100

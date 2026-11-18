@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 DEFINT A-Y:A=2.7:Y=-2.7:Z=2.7:PRINT A;Y;Z
 20 DEFSNG A:A=2.7:PRINT A
 30 DEFDBL P:P=1/3:PRINT P

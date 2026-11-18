@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM PRINT USING (数値): # の右詰め、小数の丸め、コンマ区切り、** と円記号の
 2 REM 埋め、符号 (先頭 + / 末尾 + / 末尾 -)、収まらない値の % 表示、
 3 REM 書式に混ぜた文字と _ による打消し。

@@ -16,8 +16,8 @@ print_double:
                 BNE     pd_nz
                 JSR     put_space               ; 空白 1 個を出す
                 JSR     put_zero
-                LBRA    pd_end
-pd_nz:
+                LBRA    pd_endsp        ; 区切りの空白を出してから戻る (STR$ の捕捉が
+pd_nz:                                  ;   末尾の 1 文字を区切りとして除くため)
                 LDA     FAC1+1
                 ANDA    #$80
                 BEQ     pd_pos
@@ -27,8 +27,9 @@ pd_pos:
                 LDA     #' '
 pd_sgo:
                 JSR     impl_putchar
-                ; dw1 = |v| (展開形) (ここへ展開)
-; d_unp1: FAC1 (倍精度パック, 非零) → dw1 (符号は正へ)。破壊: A,B
+                ; dw1 = |v| (展開形)
+; d_unp1: FAC1 (倍精度パック, 非零) → dw1 (符号は正へ)。呼ばれる副ルーチンではなく、
+;   このまま下の pd_sd (桁の正規化と表示) へ続く。
 d_unp1:
                 CLRA
                 LDB     FAC1

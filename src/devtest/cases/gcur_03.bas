@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM GCURSOR の第 2 引数は座標の組だけ (参考書籍)。文字列式を書いた綴りは
 2 REM 構文誤り。
 10 PRINT "S"

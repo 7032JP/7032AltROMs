@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM ERR / ERL: 飛び先で参照できる。ERR は RESUME を通ると 0 に戻り、
 2 REM ERL は最後の発生行番号を保つ。RESUME 行番号で任意の行から再開できる。
 10 ON ERROR GOTO 900

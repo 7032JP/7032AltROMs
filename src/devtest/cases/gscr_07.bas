@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM 画面比較: 画面外の座標の丸め。横 640 以上は 639 へ、縦 200-255 は 199 へ。
 2 REM 中心が画面外の CIRCLE は中心を 639 に寄せた円になる。小数座標の
 3 REM 切り捨て (横) と最近接への丸め (縦)。

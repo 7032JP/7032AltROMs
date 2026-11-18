@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM WHILE/WEND: 基本形・入れ子・入口で偽なら本体を実行しない。
 10 I=0:WHILE I<3:I=I+1:WEND:PRINT I
 20 A=0:WHILE A<2:A=A+1:B=0:WHILE B<2:B=B+1:WEND:WEND:PRINT A;B

@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM 機械語 I/O サービスの入口は CC の E・F・I を呼び出しの前後で変えない。
 2 REM F=1 I=0 で BIINIT (24)、F=1 I=1 で KEYIN (21)、F=1 I=0 で番号 0 (誤り)、
 3 REM F=0 I=0 で KEYIN を JSR [$FBFA] で呼び、戻りの CC の F・I・キャリーを見る。

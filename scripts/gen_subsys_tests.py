@@ -18,7 +18,7 @@ CASES = SUBSYS / "cases"
 LOAD_ADDRESS = 0x6000
 WORK_ADDRESS = 0x6C00
 DATA_BYTES = 80
-CASE_COUNT = 132
+CASE_COUNT = 136
 # 文字列領域 (CLEAR の第 1 引数)。
 #   ローダは DATA の 16 進文字列を 1 個ずつ H$ へ読み込む。次の値を H$ へ
 #   入れる時点では前の値がまだ生きているので、いちばん長い値 (DATA_BYTES
@@ -64,7 +64,7 @@ def loader_text(case_id: str, image: bytes, extra: list[str], s320: bool = False
 
     chunks = [image[i : i + DATA_BYTES] for i in range(0, len(image), DATA_BYTES)]
     lines = [
-        "0 REM AltROMs test - MIT, own work.",
+        "0 REM AltROMs test (MIT)",
         f"1 REM GENERATED FROM {case_id}.s BY scripts/gen_subsys_tests.py",
         f"10 CLEAR {STRING_SPACE},&H5FFF",
         # 打鍵したプログラムの一覧が画面に残っていると、観測がその文字も数えてしまう

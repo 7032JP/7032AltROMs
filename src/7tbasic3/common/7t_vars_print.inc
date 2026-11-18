@@ -7,8 +7,9 @@
 ;   各変数: [型|名前長] [名前 1..16 バイト] [値...]
 ;   先頭バイトの上位2ビット: 00=単精度, 01=整数, 10=倍精度, 11=文字列
 ;   先頭バイトの下位6ビット: 名前の有効長 (1-16)
-;   整数: 2B, 単精度: 4B, 倍精度: 8B, 文字列: 2B(ポインタ)+1B(長さ)
+;   整数: 2B, 単精度: 4B, 倍精度: 8B, 文字列: 1B(長さ)+2B(ポインタ)
 ;   1 変数の記録域 = 1 + 名前長 + 値サイズ。
+;   変数の後ろ (FNTAB..ARYTAB) に、同じ形で DEF FN の定義の記録を置く (fn_find)。
 ;   配列: ARYTAB以降、[型|名前長][名前][len(2B)][ndim(1B)][各次元(2B)][要素...]
 ;==============================================================================
 
@@ -23,12 +24,12 @@ var_size_tbl:
 
 ; impl_get_var_ref: X が指す変数名を読み, VARPTR(U)/VARTYP を設定
 ;   入力: X = 変数名先頭
-;   出力: U = 変数値アドレス, VARTYP = 型 (VTYPE_xx), X = 名前の直後
+;   出力: U = 変数値アドレス, VARTYP = 型 (VTYPE_xx), X = 名前の直後 (配列は添字の
+;         閉じ括弧の直後)
 ;
 ;   変数名は先頭 16 文字が有意 + 型サフィックス (% ! # $)。
 ;   VARTAB 上の格納形式は [型|名前長][名前][値...]。
-;   名前は本文上の位置 VNPTR と有効長 VNLEN で表し (複写しない)、検索/新規作成する
-;   (スタックや X に頼らないことでレジスタ破壊バグを避ける)。
+;   名前は本文上の位置 VNPTR と有効長 VNLEN で表し (複写しない)、検索/新規作成する。
 impl_get_var_ref:
                 BSR     parse_var_name  ; VNPTR/VNLEN/VARTYP を設定 (X=名前直後)
                 ; 配列チェック: 次が '(' なら配列
@@ -43,10 +44,10 @@ impl_get_var_ref:
 ;   17 文字目以降の英数字は名前に含めずに読み飛ばす (X は名前の直後まで進む)。
 ;   破壊: A, B, X, U (U は型サフィックス省略時の DEFTYPE 引きに使う。呼出元
 ;   impl_get_var_ref / impl_erase / impl_decl_array / igc_arrname / idef_fn /
-;   fn_name_eq は U を保たない前提。fn_name_eq のみ U を自前で退避する)。
+;   epr_fn は U を保たない前提)。
 parse_var_name:
                 JSR     skip_sp_x       ; 先行空白を読み飛ばす
-                STX     VNPTR           ; 名前先頭 (呼出元が英字であることを保証する)
+                STX     VNPTR           ; 名前先頭 (1 文字目は調べずに取る)
                 LDB     #1
                 LEAX    1,X             ; 名前1 は無条件に取る
                 ; 2 文字目以降: 英数字が続く限り取り込む
@@ -118,20 +119,16 @@ gvr_no_suffix:
 gvr_type_set:
                 STB     VARTYP
                 RTS                     ; parse_var_name 復帰
-; gvr_array の本体は 7t_arr_ndim.inc の空きプールに置く (置き場所は容量の都合)。
-; 入口はラベル参照のみ (impl_get_var_ref の LBEQ / igc_an_elem の JMP) で
-; 位置依存はない。
+; gvr_array の本体は 7t_arr_ndim.inc。
 gvr_find_scalar:
                 ; VARTAB を走査して名前一致を探す
                 PSHS    X               ; 入力ポインタ退避
                 LDU     VARTAB
 gvr_scan:
-                CMPU    ARYTAB
+                CMPU    FNTAB
                 BHS     gvr_new         ; 見つからない → 新規作成
-                ; 先頭バイト [型|名前長] を検索キーと一括比較する。型ビットを
-                ; 捨てて比較すると A と A$ (と A%) が同一エントリに命中し、A=1 の
-                ; 後の A$="..." が数値 A の格納域を文字列記述子で上書き破壊する。
-                ; 型サフィックス違いは別変数 (参考書籍)。
+                ; 先頭バイト [型|名前長] を型ビットも含めて検索キーと比較する。型サフィックス違いは
+                ; 別変数 (参考書籍)。
                 LDA     VNLEN
                 ORA     VARTYP          ; 検索キー = 型|名前長
                 CMPA    ,U
@@ -151,18 +148,18 @@ gvr_next:
                 LEAU    B,U
                 BRA     gvr_scan
 gvr_new:
-                ; 新規変数を ARYTAB (=変数領域末尾) に追加する。
-                ; 上方確保レイアウトでは配列がこの直後に密着しているため、
-                ; vars_make_room が配列ブロックをエントリサイズ分上へ移動して
+                ; 新規変数を FNTAB (=変数領域末尾) に追加する。
+                ; 上方確保レイアウトでは定義の記録と配列がこの直後に密着しているため、
+                ; vars_make_room がそれらをエントリサイズ分上へ移動して
                 ; 隙間を空ける (OM 検査込み)。
-                ; エントリサイズ = 名前 2B + 値サイズ (型別) を Y に用意する。
+                ; エントリサイズ = ヘッダ 1B + 名前長 + 値サイズ。
                 LDA     VARTYP
                 BSR     vn_valsize      ; B = 値サイズ
                 ADDB    VNLEN
                 INCB                    ; + ヘッダ 1B
                 STB     vnw_size        ; エントリバイト数 (Y は使わない:
                                         ;   呼び元が Y を保持している)
-                JSR     vars_make_room  ; U = 書込先 (確保前の ARYTAB)。OM 時は戻らない
+                JSR     vars_make_room  ; U = 書込先 (確保前の FNTAB)。OM 時は戻らない
                 ; ヘッダ (型|名前長) と名前本体を格納する
                 LDA     VNLEN
                 ORA     VARTYP
@@ -173,14 +170,7 @@ gvr_new:
                 PULS    X               ; 入力ポインタ復元 (gvr_find_scalar の PSHS X)
                 PSHS    U               ; 値先頭アドレスを退避 (戻り値)
                 ; 値領域ゼロクリア。
-                ; クリア幅と ARYTAB の前進量は、確保幅 (vnw_size = 名前 2B +
-                ;   値サイズ) と同じ単一の出所 var_size_tbl から導く。走査側
-                ;   (gvr_next) も同じ表でエントリを読み飛ばすため、確保・クリア・
-                ;   末尾更新・走査の 4 者が常に一致する。
-                ;   型ごとの分岐で幅を個別に書くと、型の追加・変更のたびに
-                ;   確保幅と ARYTAB 前進量が食い違い、次に作られる変数のエントリ
-                ;   が既存の値スロット内部へ書かれる (走査側は表どおり読み飛ばす
-                ;   のでそのエントリを跨ぐ)。型別分岐を持たない形にする。
+                ; 幅は var_size_tbl から導く。
                 LDB     vnw_size        ; ヘッダ 1B + 名前長 + 値サイズ (不変更)
                 SUBB    VNLEN
                 DECB                    ; B = 値サイズ (2/3/4/8。0 にはならない)
@@ -189,7 +179,15 @@ gvr_clr_lp:
                 DECB
                 BNE     gvr_clr_lp
 gvr_update_arytab:
-                STU     ARYTAB          ; 変数領域末尾を更新
+                LDD     VNPTR
+                CMPD    #fn_probe_buf
+                BEQ     gua_fn          ; 定義の記録は変数の範囲に入れない
+                STU     FNTAB           ; 変数領域末尾を更新
+gua_fn:
+                LDD     ARYTAB
+                ADDB    vnw_size
+                ADCA    #0
+                STD     ARYTAB          ; 配列領域の先頭を更新
                 PULS    U,PC ; U = 値先頭 (戻り値)
 
 ; ---------------------------------------------------------------------------
@@ -269,7 +267,7 @@ av_int:
                 STD     ,U
                 RTS
 av_str:
-                JMP     str_asg_mark    ; 本体は別の区画の空きプール
+                JMP     str_asg_mark    ; 本体は 7t_midstmt.inc
 
 ipf_cp4:
                 LDB     #4
@@ -302,9 +300,9 @@ prs_hit:
 prs_out:
                 PULS    X,PC
 
-; impl_push_while: WHILE の IP を GOSUB スタックに保存 (4B フレーム: IP + CURLINE_PTR)
+; impl_push_while: WHILE の枠 (5B) を枠列へ積む。
 ;   CURIP = WHILE トークン位置 (ディスパッチャが文頭で設定)。
-;   スタック先頭フレームの IP が既に CURIP と一致する場合は WEND 経由の
+;   スタック先頭フレームの IP と行が既に今の WHILE と一致する場合は WEND 経由の
 ;   再評価なので再 push しない (毎周スタックが成長するのを防ぐ)。
 ;   X (本体先頭 = 条件式直後) は保存する (ディスパッチャの次 IP)。
 impl_push_while:
@@ -317,7 +315,7 @@ impl_push_while:
 pwhl_dup:
                 PULS    X,PC
 
-; while_top: 枠列の先頭が「IP = CURIP の WHILE の枠」なら Z=1 (X = その枠)。
+; while_top: 枠列の先頭が「行と IP が今の WHILE と同じ枠」なら Z=1 (X = その枠)。
 ;   破壊: A,B,X。
 while_top:
                 LDX     EXEC_SP
@@ -328,6 +326,10 @@ while_top:
                 BNE     wt_no
                 LDD     1,X
                 CMPD    CURIP
+                BNE     wt_ret
+                LDD     3,X
+                CMPD    CURLINE_PTR     ; 行の中の位置が同じでも、別の行の WHILE は別の枠
+wt_ret:
                 RTS
 wt_no:
                 ANDCC   #$FB            ; Z=0
@@ -343,7 +345,7 @@ impl_pop_while:
                 BNE     pwend_err
                 CMPX    EXEC_SP
                 BEQ     pw_top
-                JSR     frame_del       ; 内側の枠を捨てる (X = WHILE の枠のまま)
+                JSR     frame_del       ; 内側の枠を捨てる (X は動くので次で読み直す)
                 LDX     EXEC_SP
 pw_top:
                 LDD     3,X
@@ -357,18 +359,11 @@ pwend_err:
                 LDB     #25             ; WEND without WHILE
                 JMP     impl_error_handler
 
-; --- 空きプール ---
 ;------------------------------------------------------------------------------
-; iget_body: GET@ (ドットパターン形式) の応答受取本体。
-;   impl_get の区画には残量が無いため、本体はこの空き領域に置き末尾呼出で入る。
+; iget_body: GET@ の応答受取本体 (iget_sel から。どの形式もここを通る)。
 ;
-;   矩形読出の応答領域は共有 RAM の $D384-$D3FF (124 byte) しかない。
-;   サブシステムは 124 byte を書くごとにいったん処理を止め、
-;     $D381 bit7 = 1   … 「続きがある」提示
-;     $D383        … 当該チャンクのデータ計数、データ本体は $D384 から
-;   の形で部分応答を公開し、メイン側からの継続要求コマンド ($64) を待つ。
-;   継続要求を出さずに先頭 1 チャンクで打ち切ると、124 byte (= 992 ドット) を
-;   超える大きさのパターンが途中で欠落する。
+;   応答は共有 RAM の $D384 から 124 byte ずつ届く ($D383 = そのチャンクの計数)。
+;   続きがある印 ($D381 bit7) が消えるまで継続要求 ($64) を送って受け取る。
 ;
 ;   ここでは「複写 → 継続提示があれば $64 を送って次チャンクを受け取る」を
 ;   提示が消えるまで繰り返す。複写長は毎回サブシステムが返した計数に従い、
@@ -409,8 +404,6 @@ igb_done:
 ;   プログラムを止め、処理ルーチンを呼んだ元のエラーを表示する。
 ;   ERRNUM / ERRLIN は捕捉した時のまま残っているので、表示部 (ieh_report) を
 ;   呼ぶだけでよい。
-;   ion_onerr の属する区間に予算が無いため本プールへ置く
-;   (参照はラベル経由のみで位置依存なし)。
 ;------------------------------------------------------------------------------
 ioe_off:
                 LDA     ONERROR_EN      ; 解除する前の状態 (2 = 処理ルーチン実行中)
@@ -424,10 +417,10 @@ ioe_off:
 ; irv_body: 区切りで並んだ値の並びから 1 個を取り出す共通本体。
 ;   DATA 文の値と、INPUT 文へ打ち込まれた行の項目は、どちらも「カンマで
 ;   区切った値の並び」という同じ書式なので取り出し方を 1 つにまとめてある。
-;   入口は 2 つあり (ird2_readval = DATA / inp_readval = INPUT)、どちらも追加の
-;   区切りは ':' である。DATA は文の区切りで値も終わり、INPUT へ打ち込まれた行も
+;   入口 (ird2_readval = DATA / inp_readval = INPUT) は同じアドレスで、追加の区切り
+;   inp_dlm2 に ':' を置く。DATA は文の区切りで値も終わり、INPUT へ打ち込まれた行も
 ;   ':' でコンマと同じように項目が切れる (参考書籍)。
-;   入力: X = 値の先頭, VARTYP = 受け取る型, inp_dlm2 = 追加の区切り
+;   入力: X = 値の先頭, VARTYP = 受け取る型
 ;   出力: 数値なら FAC1、文字列なら STRPTR/STRLEN/FACTYPE、
 ;         X = 値の直後 (後続の空白も読み飛ばし、区切りか終端を指す)
 ;         C = 0 … 項目として正しい / C = 1 … 数値として読めない項目
@@ -436,27 +429,17 @@ ioe_off:
 ;   打ち直しの促しへ分ける (どちらも 0 として黙って受け取ることはしない)。
 ;
 ;   値の書式 (参考書籍):
-;     引用符付き "..."  引用符は区切り記号であって値には入らない。中身は空白も
-;                       カンマもそのまま値になる。前後に空白を含む値や、カンマを
-;                       含む値を 1 個として渡す唯一の手段である。閉じ引用符が
-;                       無いまま行が終わったら、そこまでを値とする (行末の $00 は
-;                       文の終端として呼出側が見るので消費しない)。
-;     引用符なし        カンマ・追加の区切り・行末までが値だが、値の前後に付いた
-;                       空白は値に含めない。値の途中の空白は残る。空白を詰めないと
-;                       `IF A$="CD"` のような比較が成立しなくなる。
-;   値を取り出したあと後続の空白を読み飛ばすのは、区切り (カンマ) の判定を
-;   空白が妨げないようにするため。空白を残すと「区切りが無い = 並びの終わり」と
-;   誤判定し、DATA では次の値を読み飛ばして値が尽き、INPUT では 2 個目以降が
-;   区切り記号そのものを読むことになる。
+;     引用符付き "..."  中身 (空白・カンマを含む) が値。閉じ引用符が無いまま行が
+;                       終わったら、そこまでを値とする (行末の $00 は消費しない)。
+;     引用符なし        カンマ・追加の区切り・行末までが値。前後の空白は値に含めない。
+;   値を取り出したあと後続の空白を読み飛ばす。
 ;------------------------------------------------------------------------------
 irv_body:
                 JSR     skip_sp_x       ; 値の手前の空白を読み飛ばす
                 LDA     VARTYP
                 CMPA    #VTYPE_STR
                 BEQ     irv_str
-                JMP     irv_num         ; 数値の項目 (妥当性検査つき。当区間に
-
-                                        ;   余地が無いため本体は別プール)
+                JMP     irv_num         ; 数値の項目 (妥当性検査つき)
 irv_str:
                 LDA     ,X
                 CMPA    #'"'
@@ -484,13 +467,13 @@ irv_raw_lp:
                 BEQ     irv_raw_end
                 CMPA    #','
                 BEQ     irv_raw_end
-                CMPA    inp_dlm2        ; 追加の区切り (DATA=':' / INPUT=無効値)
+                CMPA    inp_dlm2        ; 追加の区切り (':')
                 BEQ     irv_raw_end
                 LEAX    1,X
                 INCB
                 BRA     irv_raw_lp
 irv_raw_end:
-                JSR     irv_rtrim       ; 末尾の空白ぶん長さ B を縮める (別プール)
+                JSR     irv_rtrim       ; 末尾の空白ぶん長さ B を縮める
 irv_fin:
                 STB     STRLEN
                 LDA     #3
@@ -503,7 +486,6 @@ irv_fin:
 ;   実数 (単精度) として持たせる。impl_int_to_float の仮数組立て入口
 ;   (iitf_mag) は D を大きさとして受けるので、符号を正に置いて合流する。
 ;   破壊: A,B,CC。X/Y/U 保存 (呼出元の本文ポインタを壊さない)。
-;   (置き場所は区画の都合。参照はラベル経由のみで位置依存はない)
 ;------------------------------------------------------------------------------
 impl_uint_to_fac:
                 TSTA
@@ -521,7 +503,6 @@ u2f_big:
 ;   英字で始まらない綴りは Syntax Error にして、本文ポインタが行の終端を
 ;   踏み越えないようにする。
 ;   入力/出力: impl_get_var_ref と同じ。
-;   (置き場所は区画の都合。参照はラベル経由のみで位置依存はない)
 ;------------------------------------------------------------------------------
 get_var_ref_chk:
                 JSR     skip_sp_x
@@ -530,7 +511,7 @@ get_var_ref_chk:
 
 ; impl_skip_wend: WHILE が偽の時 WEND を探してスキップ
 ;   入口で、スタック先頭フレームの IP が CURIP (= この WHILE のトークン位置)
-;   と一致すれば 1 段 (4B) pop する。WEND 経由の再評価で偽になった場合の
+;   と一致すれば 1 段 (5B) pop する。WEND 経由の再評価で偽になった場合の
 ;   後始末。初回評価から偽 (未 push) の場合は何も pop しない。
 ;   ※ pop 判定はここ (走査前) で行う。行またぎ走査 (isw_nl) が CURIP を
 ;     更新するため、WEND 発見後では自フレームの同定ができない。
@@ -547,7 +528,7 @@ isw_scan:
 isw_lp:
                 LDA     ,X+
                 BEQ     isw_nl          ; 行末
-                ; 関数第 2 バイトは値域が WHILE/WEND ($E2/$E4) と重ならないので
+                ; 関数第 2 バイトは値域が TOK_WHILE / TOK_WEND と重ならないので
                 ; $FF の特別扱いは不要 (作業列に他の多バイト要素は無い)
                 CMPA    #TOK_WHILE      ; WHILE
                 BNE     isw_nw
@@ -576,28 +557,17 @@ isw_err:
                 LDB     #25
                 JMP     impl_error_handler
 
-; PEEK / RND。参照はラベル経由。
+; PEEK
 impl_fn_peek:
-                ; 式の値は 0 から 65535 まで (参考書籍 PEEK)
+                ; 式の値は 0 から 65535 まで (参考書籍)
                 JSR     eval_p_to_uaddr ; 読出しアドレス (0..65535 の検査つき)
                 TFR     D,X
                 LDB     ,X
                 JMP     int_to_fac_b    ; A=0 を畳んだ入口
 
-; RND [(引数)] — 0 <= x < 1 の乱数 (参考書籍)。
-;   引数の扱い (参考書籍の規定どおり):
-;     省略 (括弧なし) / 正 … 系列を 1 つ進めて次の値を返す
-;     0                  … 系列を進めず直前に返した値をもう一度返す
-;     負                 … 系列を初期状態へ戻してから次の値を返す
-;   括弧の有無をここで見てから分岐する。無条件に impl_eval_expr_p を
-;     呼ぶと、同ルーチンは '(' が無いとき「括弧なしの式」として後続を
-;     そのまま評価するため、引数省略形 `IF RND>.9 THEN` で比較演算子ごと
-;     引数として食われ、IF の条件が RND の戻り値そのもの (常に真) に化ける。
-;   本体は当区間の ZMB 予算が足りないため空きプール (7t_deffn.inc) へ置く。
-
 ; impl_on_select: ON...GOTO/GOSUB の選択 (値に従いリスト中の行番号を選択)
 ;   入力: FAC1 = 選択値
-;   出力: FAC1 = 選択された行番号, Z=1なら範囲外
+;   出力: D = 選択された行番号, Z=1なら範囲外 (FAC1 は残りの候補を読んで変わる)
 impl_on_select:
                 JSR     impl_fac_to_int
                 ; 選択値が 0-255 の外なら Illegal Function Call (動作観察)。
@@ -615,12 +585,6 @@ ons_lp:
                 BEQ     ons_found
                 ; 行番号をスキップ (カンマ区切り)。
                 ;   選択成立時 (ons_found) と同一の impl_eval_linenum で読み進める。
-                ;   impl_parse_num は行番号参照の 2 進形式 ($FE $F2 hh ll) や参照
-                ;   手前の先行空白 ($20) を扱えず、X が前進しないため使わない。
-                ;   impl_eval_linenum は skip_sp_x + $FE/ASCII 両形式を受理し、
-                ;   選択パスと同じだけ X を前進させるため、スキップと選択の X
-                ;   前進量が必ず一致する。
-                ;   (D は破壊されるが直後に LDD ,S でカウンタを再ロードするので無害)
                 JSR     impl_eval_linenum ; 行番号を読み飛ばす (選択パスと同一処理)
                 LDA     ,X+             ; カンマ
                 CMPA    #','
@@ -637,10 +601,7 @@ ons_found:
                 JSR     impl_eval_linenum ; FAC1=対象行, D=対象行番号
                 ; この時点で X は選択した行番号の直後 (リスト途中) を指す。
                 ;   ON GOSUB の復帰位置は「ON 文の直後の文」でなければならないため、
-                ;   残りの行番号リスト (,l,l,…) を末尾 (':'/$00) まで読み飛ばして
-                ;   X を文末へ前進させる。これを行わないと GOSUB 復帰フレームが
-                ;   リスト途中を指し、RETURN が ",200…" を実行して暴走/無限ループ
-                ;   してしまう (ON GOTO は復帰しないので X が途中でも動く)。
+                ;   残りの行番号リストを文末まで読み飛ばして X を文末へ前進させる。
                 ;   選択行番号 D は impl_find_line の入力なので退避/復元する
                 ;   (impl_eval_linenum が D/FAC1 を破壊するため)。
                 PSHS    D               ; 選択行番号を退避
@@ -661,9 +622,8 @@ ons_out:
 ons_fcerr:
                 JMP     errc_5          ; Illegal Function Call
 ons_zero:
-                ; 選択値が 0 以下: 分岐しない。X はまだ行番号リストの先頭を
+                ; 選択値が 0: 分岐しない。X はまだ行番号リストの先頭を
                 ; 指しているので、リストを文末まで読み飛ばしてから Z=1 で戻る。
-                ; 読み残すと生の数字が文の位置に残り Syntax Error になる
                 JSR     impl_eval_linenum ; 候補 1 個を読み飛ばす
 onz_lp:
                 JSR     skip_comma      ; ',' が続けば C=1 で消費
@@ -674,8 +634,8 @@ onz_lp:
 
 ; impl_read_data: DATA から値を読んで FAC1 へ
 ;   状態:
-;     DATLINE ($0064) = 現在走査中の DATA 行レコード先頭 (next_ptr を指す)
-;     DATPTR  ($0027) = 次に読み出す位置 (直前値の直後 or 0=未探索)
+;     DATLINE = 現在走査中の DATA 行レコード先頭 (next_ptr を指す)
+;     DATPTR  = 次に読み出す位置 (直前値の直後 or 0=未探索)
 ;   RESTORE は DATLINE=対象行レコード先頭, DATPTR=0 (未探索) に設定する。
 impl_read_data:
                 ; 文字列の値を原文へ張り替えるための対応付け (ird2_share) を初期化する。
@@ -704,10 +664,10 @@ ird2_advline:
                 ; 対応付けは尽きた DATA 文のものなので捨てる (次の DATA 文の値は
                 ;   ird2_share が変換し直して対応付ける)。dat_tgt も倒し、次の行の
                 ;   変換で古い位置に対応付けが記されないようにする
-                CLR     dat_src
-                CLR     dat_src+1
-                CLR     dat_tgt
-                CLR     dat_tgt+1
+                CLRA
+                CLRB
+                STD     dat_src
+                STD     dat_tgt
                 ; この DATA 文は尽きた。DATA 文は行末だけでなく文の区切り ':' でも
                 ; 終わり、同じ行の続きに次の DATA が書けるので、行を跨がずに
                 ; その位置から文の走査を続ける。行末 ($00) なら ird2_stmts が
@@ -723,24 +683,9 @@ ird2_findline:
                 JSR     exec_load_rec
                 LDX     #EXECBUF        ; X = 変換済み本文の先頭
 ird2_stmts:
-                LDA     ,X+
-                BEQ     ird2_nextrec    ; 行末 → 次レコード
-                CMPA    #'"'            ; 文字列リテラル → 閉じ引用符まで飛ばす
-                BNE     ird2_nq         ;   (文字列中の $83/$00 誤認防止)
-ird2_str:
-                LDA     ,X+
-                BEQ     ird2_nextrec    ; 閉じ忘れ文字列 → 行末扱い
-                CMPA    #'"'
-                BNE     ird2_str
-                BRA     ird2_stmts
-ird2_nq:
-                CMPA    #TOK_FUNC_PFX   ; 関数前置 ($FF) → 第 2 バイトを読み飛ばす
-                BNE     ird2_nfe        ;   (関数の第 2 バイトを DATA と
-                LEAX    1,X             ;    取り違えないため)
-                BRA     ird2_stmts
-ird2_nfe:
-                CMPA    #TOK_DATA       ; DATA トークン
-                BNE     ird2_stmts
+                LDB     #TOK_DATA+1     ; DATA を行末まで探す
+                JSR     tok_find
+                BCS     ird2_nextrec    ; 行末 → 次レコード
                 ; DATA の後の値を読む。DATA トークン直後の空白を読み飛ばす。
                 JSR     skip_sp_x
                 BSR     ird2_readval
@@ -765,8 +710,7 @@ ird2_ood:
                 LDB     #4              ; Out Of Data
                 JMP     impl_error_handler
 
-; 値の取り出し (irv_body) の入口 2 つ。本体は区画の空き都合で同ファイル内の
-; 別プールに置いてある。参照はラベル経由のみで位置依存はない。追加の区切りは
+; 値の取り出し (irv_body) の入口 2 つ。追加の区切りは
 ; どちらも ':' である。DATA は文の区切りで値も終わり、INPUT へ打ち込まれた行も
 ; ':' でコンマと同じように項目が切れる。
 ird2_readval:                           ; DATA 文から
@@ -789,10 +733,7 @@ ivp_syn:
 ; irv_rtrim: 引用符なしの値の末尾に付いた空白ぶん、長さ B を縮める。
 ;   入力: B = 区切りまでの生の長さ, X = 区切りの位置 (値の直後)
 ;   出力: B = 末尾の空白を除いた長さ。X は動かさない (呼出側が区切りを見るため)
-;   U は必ず退避する。INPUT 文は代入先の変数のアドレスを U に載せたまま値の
-;     取り出しへ入るので、ここで U を潰すと代入先を見失って値が入らない
-;     (引用符なしの項目だけが長さ 0 になる)。
-;   置き場所は区画の空きの都合。参照はラベル経由のみで位置依存はない。
+;   U は保存する。
 irv_rtrim:
                 PSHS    U
                 TFR     X,U
@@ -816,13 +757,8 @@ impl_eval_linenum:
                 ; ことがあるので、先行空白を読み飛ばしてから解析する。
                 JSR     skip_sp_x
                 ; ASCII 10進行番号は共通の符号なし整数パーサ pn2_uint で読む。
-                ; (自前の *10 ループを置くと 3 桁以上で桁上げを誤りやすい)
                 JSR     pn2_uint        ; D = 行番号, X 前進
                 JMP     impl_int_to_fac
-
-;==============================================================================
-; 行番号解析 (impl_parse_linenum)
-;==============================================================================
 
 ;==============================================================================
 ; impl_eval_expr_p: 括弧付き式評価 fn(expr)
@@ -833,14 +769,7 @@ impl_eval_expr_p:
                 LEAX    1,X
                 JSR     chk_stack       ; 関数の入れ子 1 段ごとにシステムスタックの空きを確かめる
                 JSR     impl_eval_expr
-                ; 開き括弧を読んだ以上、引数の直後は必ず閉じ括弧でなければならない。
-                ; 1 バイトを無検査で読み飛ばすと、閉じ括弧が無い書き方
-                ; (`PRINT LEN("AB` のように引数の文字列定数が閉じないまま行が
-                ; 終わる、`PRINT LEN(3` のように閉じ括弧を打ち忘れる) で行末の
-                ; $00 を食い進み、次の行レコードの生バイトを文として実行し始める。
-                ; 誤りとして扱われないので `ON ERROR GOTO` でも捕まえられない。
-                ; 行末でも文の途中でも Syntax Error で打ち切る (括弧だけが閉じない
-                ; `PRINT ("AB` を式の側で打ち切るのと同じ規則)。
+                ; 閉じ括弧が無ければ Syntax Error。
                 LDA     ,X+             ; ')'
                 CMPA    #')'
                 BNE     ivp_syn         ; 閉じ括弧が無い → Syntax Error
@@ -882,7 +811,7 @@ pv_direct:
                 JSR     chk_type_str    ; FACTYPE を文字列型と比較 (共通化)
                 BEQ     pv_str
                 TSTA
-                LBNE    pv_flt          ; 実数 (単精度/倍精度) → プール分岐へ
+                LBNE    pv_flt          ; 実数 (単精度/倍精度) → pv_flt
                 ; 整数は STR$ と同じ 10 進変換で綴りにしてから出す。桁の生成を
                 ; 2 か所に持たず num_to_str (= int_to_str_raw) 1 本に統一する。
                 ; 数値の後ろに付く区切りの空白は、綴りには含まれないのでここで出す。
@@ -922,8 +851,6 @@ pvs_lp:
                 DECB
                 BNE     pvs_lp
 pvs_done:
-                ; 出し終えた実体が一時の最上位なら、ここで返す。返さないと
-                ;   1 つの PRINT 文の中で作った一時が項目ごとに積み上がり、
-                ;   文字列領域を絞ったプログラムが領域を使い切ってしまう。
+                ; 出し終えた実体が一時の最上位なら、ここで返す。
                 JSR     str_tmp_free_top
                 PULS    X,PC ; 本文ポインタ復元

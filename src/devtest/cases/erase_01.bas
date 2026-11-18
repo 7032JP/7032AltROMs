@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM ERASE: 消去後は同名を別の大きさで DIM し直せる。複数指定できる。
 2 REM 存在しない名前は何も起こらない。消去せずに再 DIM すると誤り 10
 3 REM (Duplicate Definition) になる。

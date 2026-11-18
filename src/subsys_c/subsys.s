@@ -4,7 +4,7 @@
 ; AltROMs subsys_c.rom — FM-7 / FM77AV サブシステム ROM (Type-C 相当)
 ;
 ; 10240 byte 固定、サブ CPU $D800-$FFFF にマップされる。
-; サブ CPU が受け持つ画面表示・文字表示・キー入力・カセット入出力・グラフィック
+; サブ CPU が受け持つ画面表示・文字表示・キー入力・グラフィック
 ; 描画・タイマ等のサブシステムコマンド、および BASIC の表示系コンソール処理まで
 ; 対応する。
 ;
@@ -13,29 +13,27 @@
 ;   $E000-$FFEF : コード (末尾はゼロ埋め)
 ;   $FFF0-$FFFF : 6809 ベクタテーブル
 ;
-; 設計方針 (独立実装):
-;   - コマンドディスパッチはコマンド一覧に沿う区間表 + 表引き
+; 設計方針:
+;   - コマンドディスパッチはコマンドコード $00〜$3F の飛び先の表 (cmd_jt64) を直に引く
 ;   - DP = $D0 を常用 ($D000-$D0FF の作業 RAM をダイレクトページでアクセス。共有 RAM $D380- は拡張アドレス)
-;   - 描画は B/R/G 3 プレーン直接 STA
+;   - 描画は B/R/G 3 プレーン直接 STA (AV 系は ALU)
 ;   - キーボードはサブ CPU の FIRQ で受け、リングバッファに格納
 ;
-; 用語凡例: コメント中の「参考書籍」「動作観察」は docs/LEGAL.md §6.1・§6.2 の定義に従う。
+; 用語凡例: 注釈の「参考書籍」「動作観察」は docs/LEGAL.md §6.1・§6.2 の定義による。
 ;==============================================================================
 
 ;--- 共有 RAM (絶対アドレス。常用 DP=$D0 のため拡張アドレスで参照する) ------------
 ; 参考書籍の共有 RAM の形式:
 ;   $D380 = SH_ERR  (ATN フラグ + エラーコード返却)
-;   $D381 = SH_CNT  (データカウント、PRINT 等の文字数)
+;   $D381 = SH_CNT  (状態と継続フラグ)
 ;   $D382 = SH_CMD  (メイン CPU が書込むコマンドコード)
-;   $D383-$D38E = SH_PARAM (コマンドパラメータ 12 byte)
+;   $D383- = SH_PARAM (コマンドパラメータ)
 SH_ERR          EQU     $D380     ; $D380
 SH_CNT          EQU     $D381     ; $D381
 SH_CMD          EQU     $D382     ; $D382 ← コマンドはここ
 SH_PARAM        EQU     $D383     ; $D383-$D38E
 
 ;--- I/O ポート (絶対アドレス、DP=$D0 範囲外) -----------------------------
-;   参考書籍に載る位置だけを持つ ($D400/$D401、
-;   $D409/$D40A/$D40E/$D40F)。
 IO_KEY_STAT     EQU     $D400   ; キーボードステータス
 IO_KEY_DATA     EQU     $D401   ; キーボードデータ
 IO_VRAM_GATE    EQU     $D409   ; R=ON (VRAM アクセス可), W=OFF
@@ -70,7 +68,7 @@ TAB_TABLE       EQU     $D00D   ; 10 byte = 80 桁ぶんのタブストップビ
 ED_INS          EQU     $D01B   ; 1: $04 GET の挿入モード (参考書籍。0 / $FF)
 GE_K            EQU     $D01C   ; 1: $04 GET の終了キーコード K (参考書籍。$05 も返す)
 WK_PF_SHOW      EQU     $D020   ; 1: 機能キー行の表示指定 ($01 相対 8 = FD。非 0 で描く)
-WK_LINE_BYTES   EQU     $D023   ; 2: 1 行のバイト数 (8px 行 = 640 / 10px 行 = 800)
+WK_LINE_BYTES   EQU     $D023   ; 2: 1 行のバイト数 (8px 行 = 640 / 10px 行 = 800。Type-B の位置は 320)
         IFNDEF SUBSYS_TB
 WK_VRAM_OFS1    EQU     $D021   ; 2: もう一方の処理ページの表示開始位置の控え ($D40E/$D40F は
                                 ;    処理ページごとに独立。$22 で切り替えるとき WK_VRAM_OFS と入れ替える)
@@ -102,8 +100,8 @@ KB_BUF_MASK     EQU     KB_BUF_SIZE-1           ; 下位バイトの折返しマ
 KB_BUF_ORG      EQU     KB_BUF_LO&$FF           ; 下位バイトの先頭値 (上位は常に KB_BUF_LO>>8)
 ;--- タイマ ($3D SET TIMER / $3E READ TIMER、参考書籍) のワーク ---
 ;   相対 1〜17 が READ TIMER の応答 17 byte の並びそのもの (TC、時刻、予約時刻、
-;   インターバルカウンタ、再設定値)。相対 0 は周期処理の抑止の印 (設定中は 非 0)。
-TM_GUARD        EQU     TM_BASE+0       ; 1: 非 0 の間は周期処理を行なわない (設定・読出の最中)
+;   インターバルカウンタ、再設定値)。相対 0 は周期処理の抑止の印 (値の意味は main_loop の注釈)。
+TM_GUARD        EQU     TM_BASE+0       ; 1: 0 でない間は周期処理を見送る
 TM_TC           EQU     TM_BASE+1       ; 1: タイマ制御 TC (bit0 TIM / bit1 INT / bit2 ONE / bit3 0H)
 TM_CLK          EQU     TM_BASE+2       ; 4: 時刻カウンタ (時, 分, 秒, フレーム)
 TM_T1I          EQU     TM_BASE+6       ; 4: 割込み予約時刻
@@ -141,8 +139,7 @@ PBS_PTR         EQU     $D0E2   ; 2: パターン読出ポインタ
 PBS_CNT         EQU     $D0E4   ; 1: 残データ byte 数 ($D38D 計数)
 WK_BGCOL        EQU     $D0E5   ; 1: 背景色 (0-7)。$01 コンソールイニシャライズの
                                 ;    検証合格時に確定。描画ファンクション 1 (PRESET)
-                                ;    の描画色として参照 (当方の取り決め)。初期値 0 は
-                                ;    リセットの init_clear_loop が保証。
+                                ;    の描画色として参照。
 PBF_FF          EQU     $D0E6   ; 1: 非0 = PutBlock1 のマスク $FF 直書き可
                                 ;    (fn 0/1/5 = 色置換系のみ。コマンド入口で確定)
 
@@ -159,23 +156,25 @@ CB_CMIN         EQU     CB_BASE+4       ; 1: 行頭桁 (行送り時の復帰桁
 CB_FLAG         EQU     CB_BASE+5       ; 1: 0=形式1(文字のみ) / 非0=形式2(属性+文字)
 CB_FATR         EQU     CB_BASE+6       ; 1: 形式1 固定アトリビュート ($D387)
 CB_RPTR         EQU     CB_BASE+7       ; 2: GET 応答書込ポインタ
-CB_SAVE         EQU     CB_BASE+9       ; 3: cb_drawcell カーソル桁/行/ON 退避
-CB_SAVCOL       EQU     CB_BASE+12      ; 1: cb_drawcell 現在色退避
+CB_SAVE         EQU     CB_BASE+9       ; 4: cb_drawcell のカーソル桁・行と WK_SF_ADR (2) の退避
 CB_DCOL         EQU     CB_BASE+13      ; 1: 描画対象セル 桁 (CB_DROW と隣接、LDD 用)
 CB_DROW         EQU     CB_BASE+14      ; 1: 同 行
 CL_ATR          EQU     CB_BASE+15      ; 1: $20 アトリビュート
 CL_CHR          EQU     CB_BASE+16      ; 1: $20 文字コード
-CL_DX           EQU     CB_BASE+17      ; 1: $20 |dx|
-CL_DY           EQU     CB_BASE+18      ; 1: $20 |dy|
-CL_SX           EQU     CB_BASE+19      ; 1: $20 桁方向 (+1/$FF)
+CL_DX           EQU     CB_BASE+17      ; 1: $20 |dx| (CL_SX と隣接、STD 用)
+CL_SX           EQU     CB_BASE+18      ; 1: $20 桁方向 (+1/$FF)
+CL_DY           EQU     CB_BASE+19      ; 1: $20 |dy| (CL_SY と隣接、STD 用)
 CL_SY           EQU     CB_BASE+20      ; 1: $20 行方向 (+1/$FF)
-CL_N            EQU     CB_BASE+21      ; 1: $20 残ステップ
+CL_N            EQU     CB_BASE+21      ; 1: $20 残ステップ (CL_ACC と隣接、STD 用)
 CL_ACC          EQU     CB_BASE+22      ; 1: $20 DDA アキュムレータ
 CL_END          EQU     CB_BASE+23      ; 1: $20 塗潰し 終端行 (cl_line 呼出間で保持)
+CL_T            EQU     CB_BASE+24      ; 1: $20 段を送るしきい値 ((主軸の長さ+1)/2。CL_MAJ と隣接、STD 用)
+CL_MAJ          EQU     CB_BASE+25      ; 1: $20 主軸 (0 = 行方向が長い / $FF = 桁方向が長い / 1 = 45 度)
+CL_SUM          EQU     CB_BASE+26      ; 2: $20 両端の和 (X0+X1, Y0+Y1。鏡像のセルの計算用)
 
-;--- ワーク RAM レイアウト ($C000-$CFFF, 4KB) ----------------------------
+;--- ワーク RAM レイアウト --------------------------------------------------
 WK_BASE         EQU     $D040
-WK_SCREEN_W     EQU     WK_BASE+$00     ; 1: 画面幅 (byte 数) = 80 or 40
+WK_SCREEN_W     EQU     WK_BASE+$00     ; 1: 画面幅 (桁数) = 80 or 40
 WK_SCREEN_H     EQU     WK_BASE+$01     ; 1: 画面高 (行数) = 25 or 20
 WK_CURSOR_X     EQU     WK_BASE+$02     ; 1: カーソル X 位置 (文字単位)
 WK_CURSOR_Y     EQU     WK_BASE+$03     ; 1: カーソル Y 位置 (文字単位)
@@ -186,7 +185,6 @@ WK_CURSOR_EN    EQU     WK_BASE+$05     ; 1: カーソルを出す指定かの�
                                         ;    WK_CURSOR_ON と隣接させ、両者を 16bit で同時に
                                         ;    書けるようにしてある。
 WK_COLOR        EQU     WK_BASE+$06     ; 1: 現在描画色 (0-7)
-WK_ATTR_MODE    EQU     WK_BASE+$07     ; 1: 描画モード (0=REPLACE, 1=OR, 2=AND, 3=XOR)
 WK_VIEW_X0      EQU     WK_BASE+$08     ; 2: クリッピング枠 左上 X
 WK_VIEW_Y0      EQU     WK_BASE+$0A     ; 2: 同 Y
 WK_VIEW_X1      EQU     WK_BASE+$0C     ; 2: 右下 X
@@ -201,22 +199,16 @@ WK_ROW20        EQU     WK_BASE+$1A     ; 1: 行ピッチ (0=8px/25行, 非0=10p
 WK_KB_CTL       EQU     WK_BASE+$1B     ; 1: キー入力の制御 (参考書籍)。
                                         ;    bit7 = Lock Keyboard ($1B $23) の間はキー入力を受付けない
                                         ;    bit0 = Set Buffer Mode ($1B $67) で先行入力を行なう
-                                        ;    (STAGE_ALT_RAM を定義しない ROM はリセット時に 1 にする。
-                                        ;    ワーク RAM を 0 で消すと停止の側になる。動作観察)
 WK_MONO         EQU     WK_BASE+$1C     ; 1: 単色表示 (グリーン) の指定 ($01 の相対 10 = GR)。
                                         ;    非 0 なら文字を緑だけで描く (色の控えは変えない)
 WK_LOC_COL      EQU     WK_BASE+$1D     ; 1: $12 カーソル位置指定 第1パラメータ (桁) 退避
-                                        ;    (機能キー行の表示指定 WK_PF_SHOW は位置を参考書籍が
-                                        ;     定めるので冒頭で割り付ける。pf_show 参照)
 WK_WIN_TOP      EQU     WK_BASE+$2E     ; 1: スクロール範囲 上端行 (現行ピッチの行単位、全画面=0)
 WK_WIN_END      EQU     WK_BASE+$2F     ; 1: スクロール範囲 下端行+1 (排他、全画面=行数)
 WK_TXT_COL      EQU     WK_BASE+$1E     ; 1: SF オーダ (参考書籍) で定めた属性 (bit7 を除く)。
                                         ;    SF に続く一連の文字列 (文字・BEL・BS・HT・RC) は
                                         ;    この属性で描く。グラフィック描画色 WK_COLOR とは独立
-                                        ;    ($04 GET の挿入モード ED_INS は位置を参考書籍が
-                                        ;     定めるので冒頭で割り付ける)
 WK_BLINK        EQU     WK_BASE+$1F     ; 1: カーソルの点滅の計時の控え。$04 GET のキー待ちが
-                                        ;    最後に見た時刻カウンタの最下位桁 ($D00F)。
+                                        ;    最後に見た時刻カウンタの最下位桁 (TM_CLK+3)。
                                         ;    読み書きするのはキー待ちの繰り返しだけで、
                                         ;    割り込みの処理はここを読みも書きもしない
 WK_SF_ADR       EQU     $D0C0           ; 2: SF オーダを置いたセル (0 = 一連の文字列の外)
@@ -232,43 +224,26 @@ WK_LN_Y0        EQU     WK_BASE+$36     ; 2: LINE 始点 Y
 WK_LN_X1        EQU     WK_BASE+$38     ; 2: LINE 終点 X
 WK_LN_Y1        EQU     WK_BASE+$3A     ; 2: LINE 終点 Y
 WK_TMP          EQU     WK_BASE+$3C     ; 2: テンポラリ (画素のアドレス計算の途中結果)。
-                                        ;    周期処理 (NMI) の側から書いてはならない。
-                                        ;    画素の読み書きが「置く→足す」の 2 命令に
-                                        ;    またがる隙へ割込みが入ると途中結果が壊れ、
-                                        ;    その画素だけ別アドレスを指す。割込み側でアドレスを
-                                        ;    組む必要があるときはスタックを使うこと。
+                                        ;    割込みの処理からは使わない。
 WK_BIT_MASK     EQU     WK_BASE+$3E     ; 1: PSET 用 bit マスク
-                                        ;    (WK_BASE+$3F は空き。$04 GET の終了キーコード GE_K は
-                                        ;     位置を参考書籍が定めるので冒頭で割り付ける)
 ;--- 矩形 (BOX/FILL) 用 4 隅退避 ---
 WK_RECT_X0      EQU     WK_BASE+$40     ; 2
 WK_RECT_Y0      EQU     WK_BASE+$42     ; 2
 WK_RECT_X1      EQU     WK_BASE+$44     ; 2
 WK_RECT_Y1      EQU     WK_BASE+$46     ; 2
 WK_RECT_CY      EQU     WK_BASE+$48     ; 2: FILL 用 現在行 Y
-WK_PAINT_BCOL   EQU     WK_BASE+$4A     ; 1: PAINT 境界色
 WK_PAINT_FCOL   EQU     WK_BASE+$4B     ; 1: PAINT 塗色
 WK_CC_OLDCOL    EQU     WK_BASE+$4C     ; 1: Change Color 旧色
 WK_PB_FN        EQU     WK_BASE+$4D     ; 1: $1E ファンクションコード ($D38C、入口で確定)
-WK_TIMER        EQU     WK_BASE+$4E     ; 2: ソフトウェアタイマ ($3D/$3E)
 WK_GB_BITACC    EQU     WK_BASE+$50     ; 1: GetBlock1 ビット集約バッファ (番兵ビット方式。
                                         ;    $01 = 端数なし。画素ビットを ROL で下から入れ、
                                         ;    番兵が押し出された時点で 1 byte 確定)
 GE_EDIT         EQU     WK_BASE+$51     ; 1: $04 GET の編集中の印 ($40 = 描いたセルの属性に M (変更) を立てる / 0)
 WK_GB_TGTCOL    EQU     WK_BASE+$52     ; 1: GetBlock 走査モード (0=色リスト一致 / 非0=プレーンマスク)
 WK_GB_NCOL      EQU     WK_BASE+$53     ; 1: GetBlock1 指定色数 (1-8)
-;--- PAINT シード座標スクラッチ (描画プリミティブと非干渉な専用域) ---
-; pset_internal / get_pixel_color が WK_TMP / WK_BIT_MASK を破壊するため、
-; シード座標の受け渡しにはそれらと重ならない COPY-PARAM 退避域を流用する
-; (COPY コマンドは PAINT と同時実行されないため安全)。
-WK_SEED_X       EQU     WK_BASE+$20     ; 2: pf_push/pf_pop 用 シード X
-WK_SEED_Y       EQU     WK_BASE+$22     ; 2: 同 シード Y
 WK_SYM_SAVC     EQU     WK_BASE+$54     ; 1: SYMBOL 入口の WK_COLOR 退避 (出口で復元)
 ;--- SYMBOL (cmd $19) 専用スクラッチ (グラフィック系・他描画と非同時) と PAINT の走査変数 ---
-;   Type-A / Type-B の位置 (SUBSYS_AV) では、参考書籍が $D096-$D0B6 に
-;   キー入力バッファのワークとタイマのワークを定めるので、この区画の作業変数はシステム変数
-;   領域の空き ($D004-$D007、$D025-$D03F、$D0BE-$D0BF) へ移す。並び (WK_SYM_X と WK_SYM_Y の
-;   隣接、WK_SYM_PTR 以降の 23 byte の相対) は変えない。
+;   Type-A / Type-B の位置 (SUBSYS_AV) では別アドレスへ移す。
         IFDEF SUBSYS_AV
 WK_SYM_X        EQU     $D004           ; 2: 文字基準 X (描画進行で更新)
 WK_SYM_Y        EQU     $D006           ; 2: 文字基準 Y (WK_SYM_X と隣接)
@@ -299,7 +274,7 @@ WK_SYM_VEC      EQU     SYM_B+13        ; 2: アングルコードで選んだ�
                                         ;    (指す 2 byte が行送り DV、その次の 2 byte が
                                         ;    桁送り DU)。GetBlock1 の色リスト / PAINT の
                                         ;    走査変数と重畳するが、いずれも SYMBOL とは
-                                        ;    別コマンドで同時に走らない (既存の重畳規約)
+                                        ;    別コマンドで同時に走らない
 WK_GB_COLS      EQU     SYM_B+13        ; 8: GetBlock1 指定色リスト退避 ($1B 実行中のみ使用。
                                         ;    SYMBOL/$04/PAINT のスクラッチと重畳だが別コマンドで非同時)
 ; --- コンソールバッファ (サブ側 $C000-$CF9F、参考書籍) ---
@@ -311,9 +286,6 @@ CONBUF_CHAR     EQU     $C000
 CONBUF_ATTR     EQU     $C7D0           ; = CONBUF_CHAR + $07D0 (固定オフセット)
 
 ;--- VRAM 配置 -----------------------------------------------------------
-VRAM_B          EQU     $0000   ; B プレーン (16KB) ※ $D409 ゲートで開く
-VRAM_R          EQU     $4000   ; R プレーン
-VRAM_G          EQU     $8000   ; G プレーン
 VRAM_PLANE_SZ   EQU     $4000   ; プレーンサイズ
 
 ;==============================================================================
@@ -333,7 +305,7 @@ VRAM_PLANE_SZ   EQU     $4000   ; プレーンサイズ
 ;   手順 (HALT + $D382=コマンド/$D383-=パラメータ) で受け渡しを行う (動作観察) ため、
 ;   コマンド処理本体は共通である。SUBSYS_AV 定義時だけ、FM77AV の命令 $45
 ;   (キーエンコーダ命令)・$7F (共有 RAM 上の処理の実行)・$22 (表示ページ・処理
-;   ページの選択)・$39 (描画範囲の設定と枠付きの矩形の塗り) を区間表に加え、$15 LINE・$18 PAINT・
+;   ページの選択)・$39 (描画範囲の設定と枠付きの矩形の塗り) を受け付け、$15 LINE・$18 PAINT・
 ;   $39 を ALU とラインドロワで描く。並びと画面は型で分ける:
 ;     - SUBSYS_TB 定義時 (subsys_b.rom): 色が B・R・G 各 4 ビットの並び、320×200 の
 ;       画面。$1B は受け付けず ($46)、$1D は 1 画素 2 バイトで返す
@@ -345,20 +317,14 @@ VRAM_PLANE_SZ   EQU     $4000   ; プレーンサイズ
 
 ;==============================================================================
 ; ANK フォント領域 ($D800-$DFFF, 2KB)
-; 256 文字 × 8 byte。font.bin 全体をそのまま格納する (subsyscg バンク 0 と同一)。
+; 256 文字 × 8 byte。font.bin 全体をそのまま格納する。
 ;
-; 【設計制約・厳守】$D800-$DFFF はフォントデータ専用 (実行コード配置禁止)。
-;   AV 機ではこの領域が Type-C 選択中でも CGROM バンク領域として供給され、
-;   subsys_c ROM 側のこの範囲は不可視になる (動作観察)。ここへ実行コードを
-;   置くと、AV 機ではそのコードの代わりにフォントデータが見え、呼出した
-;   サブ CPU が即死する。実行コードは必ず $E000 以降に置くこと。
+; $D800-$DFFF はフォント専用。実行コードは $E000 以降に置く。
 ;==============================================================================
 font_base:
                 INCLUDEBIN "../build/font.bin"
 
                 ; font_base から 2048 byte の範囲がフォント。
-                ; font.bin は scripts/genfont.py で生成 (256 文字 × 8 byte = 2048 byte)。
-                ; サイズ検証は Makefile の `make verify` で行う。
         ELSE
 ; AV Type-A ビルド: フォント区画は ROM に含めない ($D800-$DFFF は CG バンク領域)。
 ; 代替 CG ROM が同一 font.bin を同アドレスレイアウトで供給する (全バンク同内容)。
@@ -379,11 +345,8 @@ reset_entry:
                 ; 起動時に残っているキーとストローブを読み捨てる (参考書籍:
                 ; $D400/$D401 の読出しでストローブのフリップフロップが消える)
                 LDD     IO_KEY_STAT
-                ; ワーク RAM の範囲 $D000-$D37F (参考書籍) と共有 RAM の相対 0〜1 を 0 に。
-                ;   S を設定する前に済ませる (6809 の NMI はリセットの後、S をプログラムで
-                ;   設定するまで受け付けられない。CPU の仕様)。Type-A / Type-B の位置では
-                ;   NMI のベクタが RAM の割込みフックテーブルを指すので、フックを敷き終える
-                ;   まで NMI が入らないよう、この順にする
+                ; ワーク RAM の範囲 $D000-$D37F (参考書籍) と共有 RAM の相対 0〜1 を 0 にする処理は
+                ;   フックを敷くまで NMI が入らないよう、S を設定する前に済ませる。
                 LDX     #$D000
                 LDU     #$0000
 init_clear_loop:
@@ -402,12 +365,7 @@ hook_init:
                 CMPX    #hook_tmpl+18
                 BNE     hook_init
         ENDC
-                LDS     #$D000          ; SP = $D000 (push 時 $CFFF, $CFFE... と下方に伸びる。
-                                                ;   共有 RAM ($D380+) と衝突しない)
-                                                ;   S の最初の設定は LDS の即値で行う。NMI は S の
-                                                ;   設定が済むまで受け付けられないので、ここで確実に
-                                                ;   設定し、周期 NMI (タイマの計時) を入れて
-                                                ;   READ TIMER ($3E) の待ちを成り立たせる
+                LDS     #$D000          ; SP = $D000
                 TFR     S,D             ; D = $D000 / A = $D0 (DP 値)
                 TFR     A,DP            ; DP = $D0 (= 作業 RAM ダイレクト)
                 ; --- 既定の画面パラメータ: 80x25 テキスト / 描画範囲は画面全体 /
@@ -461,7 +419,7 @@ avc_lp:
                 BCC     avc_pg                  ; $20 → 0 → (借り) 終わり
                 CLR     >IO_ALU_CMD             ; ALU を止める
         ENDC
-                ; コンソール制御 ($D021) の RESET 時の既定 (参考書籍:
+                ; コンソール制御 (WK_CSCTL) の RESET 時の既定 (参考書籍:
                 ;   CF = $23 = オート LF (bit5) / オーダ動作 (bit1) / カーソル表示 (bit0))
                 LDA     #$23
                 STA     <WK_CSCTL
@@ -490,7 +448,6 @@ avc_lp:
                 ;   直後の表示は消灯で、サブ CPU 側の操作で点灯・消灯する仕組みは
                 ;   参考書籍に載る。$D408 を読むと点灯し、書くと消灯する。
                 ;   画面の初期化を終え、メイン CPU へ準備完了を返す前に 1 回読む。
-                ;   STAGE_ALT_RAM を定義した ROM にも入れる ($D402 と同じ扱い)。
                 TST     >$D408                  ; 読みで表示を点灯する
                 ; BUSY はここでは落とさない。最初に落とすのはコマンド待ち (sh_rereq) で、
                 ;   共有 RAM にコマンドが置かれていないことを確かめてからにする
@@ -506,17 +463,23 @@ avc_lp:
 main_loop:
                 LDD     #$D000                  ; D = SP 初期値 / A = DP 値 (1 命令で両方を用意)
                 TFR     D,S                     ; SP リセット
-                ; DP=$D0 を毎サイクル再確立 (防御)。コマンド待ち (wait_cmd/sh_rereq)
-                ;   や各ハンドラは DP=$D0 で $D0xx の作業 RAM をダイレクトアクセスする前提。
-                ;   $3F の CALL が実行するアップロードコードが DP を変えたまま RTS で戻らない
-                ;   等で DP がリークすると、作業 RAM の参照が別アドレスへ化けてコマンドを
-                ;   永久に見落とす。ここで必ず
-                ;   $D0 に戻し、ループが壊れた DP に影響されないようにする。
+                ; DP を毎回 $D0 に戻す
                 TFR     A,DP                    ; A = $D0 (上の LDD で用意済み)
+                ; タイマ命令の後始末。TM_GUARD は 0 = 通常、1 = 設定・読出しの最中、
+                ;   2 以上 = その最中に見送った周期処理の数 + 1。1 つずつ減らしながら反映する
+                ;   (反映の間に見送った分も同じ数に加わる)。
+ml_tm:
+                TST     <TM_GUARD
+                BEQ     ml_cmd                  ; 通常
+                DEC     <TM_GUARD
+                BEQ     ml_cmd                  ; 見送りなし
+                ORCC    #$40                    ; FIRQ マスク
+                JSR     nmi_subwork             ; 見送った 1 回ぶんを反映する
+                ANDCC   #$BF                    ; FIRQ マスク解除
+                BRA     ml_tm
+ml_cmd:
                 ; コマンド待ちと命令の受付・完了の共通部は、ワーク RAM ($D000-$D37F) のうち
-                ;   WK_PB_FN の 1 byte にしか書かない。$3F / $7F でサブ CPU へ処理を転送する
-                ;   プログラムは、ワーク RAM のどこにでも自分のコードやデータを置いてよく、
-                ;   転送された処理から戻るたびにここを通るからである
+                ;   WK_PB_FN の 1 byte にしか書かない。
                 LDU     #SH_PARAM               ; U = 共有 RAM 相対 3 ($D383)。コマンド待ちと各ハンドラは
                                                 ;   U を変えるまで共有 RAM を n,U で参照する
                                                 ;   (相対 0 = -3,U / 相対 1 = -2,U / 相対 2 = -1,U /
@@ -544,23 +507,13 @@ dispatch_cmd2:                                  ; BUSY セット済の再ディ�
                 TSTA                            ; $00 は何もしない正常応答
                 BEQ     dispatch_done
         ENDC
-                ; 参考書籍のコマンド一覧に載る区間だけを表へ通す。
-                LDX     #cmd_rangetab
-dsp_scan:
-                TST     ,X                      ; 下限 0 = 区間表の終り
-                BEQ     dsp_badcode
-                CMPA    1,X                     ; 上限を超える?
-                BHI     dsp_next
-                CMPA    ,X                      ; 下限以上?
-                BCC     dsp_hit
-dsp_next:
-                LEAX    3,X                     ; 次の区間へ
-                BRA     dsp_scan
+                ; コマンドコード $00〜$3F は 64 件の飛び先の表を直に引く (受け付けないコードは dsp_c46)。
+                TFR     A,B                     ; B = コマンドコードの控え
+                CMPA    #$3F
+                BHI     dsp_bad0
+                LDX     #cmd_jt64
 dsp_hit:
-                SUBA    ,X                      ; 区間内の位置
-                ADDA    2,X                     ; + 区間の索引起点 = 表の索引
-                LDX     #cmd_dispatch_table
-                ASLA                    ; *2 (1 エントリ 2 byte。索引は 36 以下で A は正)
+                ASLA                    ; *2 (1 件 2 byte。索引は $3F 以下で A は正)
                 ; 取り消し (COMMAND ABORT、参考書籍) の IRQ を、命令の
                 ;   実行中だけ受ける。受理より前に届いていた要求は $D402 の読出しで消してから
                 ;   解除する (残っていると次の命令が直ちに取り消される)
@@ -569,8 +522,22 @@ dsp_abrt:                                       ; X = 表 / A = 変位。拡張�
                 ANDCC   #$EF            ; I (IRQ) を解除
                 JSR     [A,X]                   ; 表の [索引*2] のハンドラを呼ぶ
                 BRA     dispatch_done
+dsp_bad0:
+                TFR     B,A                     ; A = コマンドコード
+        IFDEF SUBSYS_AV
+                LDX     #cmd_avx                ; FM77AV の $45・$7F は 2 件の表
+                CMPA    #$45
+                BEQ     dsp_av0
+                CMPA    #$7F
+                BNE     dsp_badcode
+                LDA     #1
+                BRA     dsp_hit
+dsp_av0:
+                CLRA
+                BRA     dsp_hit
+        ENDC
 dsp_badcode:
-                CMPA    #$64                    ; 継続コマンド (参考書籍) は一覧のうち。
+                CMPA    #$64                    ; 継続コマンド (参考書籍)。
                 BEQ     dispatch_done           ;   受取るデータが無ければ正常応答のみ
         IFDEF SUBSYS_AV
                 ; 拡張コマンド $80〜$8F (参考書籍): 拡張コマンド
@@ -590,7 +557,7 @@ dsp_badcode:
                 BRA     dsp_abrt
 dsp_notx:
         ENDC
-                LDA     #$46                    ; 一覧に無いコード = コマンドコードの
+                LDA     #$46                    ; 受け付けないコード = コマンドコードの
                 STA     -3,U                    ;   誤り (参考書籍)
                                                 ; ↓ dispatch_done へ落ちる
 
@@ -598,111 +565,129 @@ dispatch_done:
                 ORCC    #$10            ; 命令の外では取り消しの IRQ を受けない
 
                 ; 応答完了通知:
-                ;   - $D381 (SH_CNT) / $D382 (SH_CMD) / $D380 (SH_ERR/ATN) を 0 へ戻す。
-                ;   - $D381 はコマンド応答のデータ計数と、周期 NMI が公開するイベント
-                ;     状態の両方に使われる位置である。応答側の計数を残したままにすると、
-                ;     次のコマンドを出したメインが前回の計数を読んで二重に取り込む。
-                ;   - ただし周期 NMI が立てるタイマの事象 (bit4 TIMER / bit5 INTERVAL /
-                ;     bit6 0 時。参考書籍) は残す。予約時刻の一致は
-                ;     1 フレームだけ立つので、コマンドの処理中に立ったものをここで 0 へ戻すと
-                ;     メインへ届かない。0 にするのはメイン CPU (参考書籍)。
-                LDA     >SH_CNT                 ; $D381 ← タイマの事象ビットだけ残す
-                ANDA    #$70
+                ;   $D381 は継続フラグ (bit7) だけを 0 に戻す。$D382 も 0 に戻す。
+                ;   割込原因 (bit0〜3 の PF キー番号、bit4〜6 のタイマ) は、メイン CPU が読み取るまで
+                ;   保持する。
+                LDA     >SH_CNT                 ; $D381 ← 継続フラグだけを落とす
+                ANDA    #$7F
                 STA     >SH_CNT
                 CLR     >SH_CMD                 ; $D382 ← 0
                                                 ; $D380 (相対 0) はここでは触らない。
                                                 ;   エラーコード (参考書籍) を置いた
                                                 ;   場合、メインが読むまで残す必要がある。
                                                 ;   ATN ビットは wait_cmd 先頭で落とす。
-                BRA     main_loop
-
-;------------------------------------------------------------------------------
-; cmd_rangetab / cmd_dispatch_table — 参考書籍の一覧に沿う区間ディスパッチ
-;   cmd_rangetab は「下限 / 上限 / 表の索引起点」の 3 byte を区間ぶん並べ、
-;   下限 0 で終端する。参考書籍のコマンドコードは連続していないので、
-;   一覧に載る区間だけを並べ、どの区間にも入らないコードはコマンドコードの
-;   誤り ($46) として返す。
-;   継続コマンド $64 (参考書籍) は区間表の外で個別に受ける。
-;   $3F は本実装が意図して持つ入口として区間に含める。
-;------------------------------------------------------------------------------
-cmd_rangetab:
-                FCB     $01,$0D,0               ; コンソール ($01-$0D)
-                FCB     $15,$20,13              ; グラフィック + 文字直線 ($15-$20)
-                FCB     $29,$2C,25              ; キーボード ($29-$2C)
-                FCB     $3D,$3F,29              ; タイマ ($3D/$3E) + $3F
-        IFDEF SUBSYS_AV
-                FCB     $45,$45,32              ; FM77AV のキーエンコーダ命令 ($45)
-                FCB     $7F,$7F,33              ; FM77AV の共有 RAM 上の処理の実行 ($7F)
-                FCB     $22,$22,34              ; FM77AV の表示ページ・処理ページの選択 ($22)
-                FCB     $39,$39,35              ; FM77AV の描画範囲の設定と枠付きの矩形の塗り ($39)
-                FCB     $36,$36,36      ; FM77AV の LINE 2 ($36。参考書籍)
-                ; $41 SET RTC / $42 READ RTC は持たない (区間表に入れないので $46 を返す)。
-                ;   RTC はキーエンコーダの配下にある部品で (参考書籍)、
-                ;   サブ CPU から届く道は KEYBOARD CONTROL ($45) だけだが、その副命令は
-                ;   $00〜$05 の 6 つで、RTC に触れるものが無い。よって実装しない
-        ENDC
-                FCB     $00                     ; 区間表の終り
+                JMP     main_loop
 
 ;------------------------------------------------------------------------------
 ;--- 時刻カウンタの桁上限表 ------------------------------------------------------
 ;   周期処理の桁送り経路だけが参照する 4 byte。
 nmi_climits:
                 FCB     $32,$3C,$3C,$18         ; 桁上げ上限 (フレーム/秒/分/時)
+fr_pfslot:                                      ; PF1〜PF10 の定義テーブルの枠の位置
+                FDB     KB_PF_BASE+16,KB_PF_BASE+32,KB_PF_BASE+48,KB_PF_BASE+64,KB_PF_BASE+80
+                FDB     KB_PF_BASE+96,KB_PF_BASE+112,KB_PF_BASE+128,KB_PF_BASE+144,KB_PF_BASE+160
+;------------------------------------------------------------------------------
+; cmd_jt64 — コマンドコード $00〜$3F の飛び先の表 (受け付けないコードは dsp_c46)。
+;   $40 以上は dsp_bad0 で振り分ける。
+;------------------------------------------------------------------------------
 
-cmd_dispatch_table:
-                ; 索引 0-12 = コマンド $01-$0D (参考書籍)
-                FDB     c01_ext           ; $01 INIT
-                FDB     c02_ext                 ; $02 ERASE
-                FDB     cmd_03_console          ; $03 PUT (コンソール文字出力)
-                FDB     cmd_04_get              ; $04 GET (コンソール行入力 / 行エディタ)
-                FDB     cmd_05_getc             ; $05 GETC (参考書籍)
-                FDB     cmd_06_cget1            ; $06 Get Character Block 1 (文字)
-                FDB     cmd_07_cput1            ; $07 Put Character Block 1 (文字)
-                FDB     cmd_08_cget2            ; $08 Get Character Block 2 (属性+文字)
-                FDB     cmd_09_cput2            ; $09 Put Character Block 2 (属性+文字)
-                FDB     c0a_ext        ; $0A Get Buffer Address
-                FDB     cmd_0b_tabset           ; $0B TAB SET
-                FDB     cmd_0c_cursor           ; $0C CONSOLE CONTROL
-                FDB     c0d_ext             ; $0D ERASE 2
-                ; 索引 13-24 = コマンド $15-$20 (参考書籍)
-                FDB     line15_entry             ; $15 LINE
-                FDB     chain16_entry            ; $16 CHAIN
-                FDB     point_entry            ; $17 POINT (点列描画)
-                FDB     paint_entry            ; $18 PAINT 本体
-                FDB     symbol_entry            ; $19 SYMBOL (本体は ROM 末尾)
-                FDB     chgcol_entry           ; $1A CHANGE COLOR (矩形内色置換)
+cmd_jt64:
+                FDB     dsp_c46                 ; $00
+                FDB     c01_ext                 ; $01
+                FDB     c02_ext                 ; $02
+                FDB     cmd_03_console          ; $03
+                FDB     cmd_04_get              ; $04
+                FDB     cmd_05_getc             ; $05
+                FDB     cmd_06_cget1            ; $06
+                FDB     cmd_07_cput1            ; $07
+                FDB     cmd_08_cget2            ; $08
+                FDB     cmd_09_cput2            ; $09
+                FDB     c0a_ext                 ; $0A
+                FDB     cmd_0b_tabset           ; $0B
+                FDB     cmd_0c_cursor           ; $0C
+                FDB     c0d_ext                 ; $0D
+                FDB     dsp_c46                 ; $0E
+                FDB     dsp_c46                 ; $0F
+                FDB     dsp_c46                 ; $10
+                FDB     dsp_c46                 ; $11
+                FDB     dsp_c46                 ; $12
+                FDB     dsp_c46                 ; $13
+                FDB     dsp_c46                 ; $14
+                FDB     line15_entry            ; $15
+                FDB     chain16_entry           ; $16
+                FDB     point_entry             ; $17
+                FDB     paint_entry             ; $18
+                FDB     symbol_entry            ; $19
+                FDB     chgcol_entry            ; $1A
         IFDEF SUBSYS_TB
-                FDB     c_nocode                ; $1B Type-B の位置では受け付けない ($46)
-                FDB     pb1_fast        ; $1C PUT BLOCK 1
-                FDB     gb2b_entry              ; $1D Type-B の位置の矩形読出し 2
+                FDB     dsp_c46                 ; $1B
         ELSE
-                FDB     getblock1_entry        ; $1B GET BLOCK 1
-                FDB     pb1_fast        ; $1C PUT BLOCK 1
-                FDB     getblock2_entry        ; $1D GET BLOCK 2
+                FDB     getblock1_entry         ; $1B
+        ENDC
+                FDB     pb1_fast                ; $1C
+        IFDEF SUBSYS_TB
+                FDB     gb2b_entry              ; $1D
+        ELSE
+                FDB     getblock2_entry         ; $1D
         ENDC
         IFDEF SUBSYS_TB
-                FDB     tb1e_entry              ; $1E Type-B の位置の矩形書込み 2
+                FDB     tb1e_entry              ; $1E
         ELSE
-                FDB     pb2_fast        ; $1E PUT BLOCK 2
+                FDB     pb2_fast                ; $1E
         ENDC
-                FDB     gcursor_entry           ; $1F GRAPHIC CURSOR (本体は ROM 末尾)
-                FDB     chline_entry           ; $20 CHARACTER LINE
-                ; 索引 25 以降 = コマンド $29-$2C (参考書籍)
-                FDB     cmd_29_inkey            ; $29 INKEY
-                FDB     funkey_entry            ; $2A Define String of PF
-                FDB     getpf_entry             ; $2B Get String of PF
-                FDB     intctl_entry           ; $2C Interrupt Control
-                ; 末尾 3 件 = コマンド $3D/$3E (参考書籍) と $3F
-                FDB     settimer_entry          ; $3D SET TIMER
-                FDB     readtimer_entry        ; $3E READ TIMER
-                FDB     cmd_3f_bytecode         ; $3F バイトコード試験用の入口
+                FDB     gcursor_entry           ; $1F
+                FDB     chline_entry            ; $20
+                FDB     dsp_c46                 ; $21
         IFDEF SUBSYS_AV
-                ; 索引 32-36 = FM77AV の Type-A / Type-B の位置に置く ROM だけが持つ命令
+                FDB     c22_entry               ; $22
+        ELSE
+                FDB     dsp_c46                 ; $22
+        ENDC
+                FDB     dsp_c46                 ; $23
+                FDB     dsp_c46                 ; $24
+                FDB     dsp_c46                 ; $25
+                FDB     dsp_c46                 ; $26
+                FDB     dsp_c46                 ; $27
+                FDB     dsp_c46                 ; $28
+                FDB     cmd_29_inkey            ; $29
+                FDB     funkey_entry            ; $2A
+                FDB     getpf_entry             ; $2B
+                FDB     intctl_entry            ; $2C
+                FDB     dsp_c46                 ; $2D
+                FDB     dsp_c46                 ; $2E
+                FDB     dsp_c46                 ; $2F
+                FDB     dsp_c46                 ; $30
+                FDB     dsp_c46                 ; $31
+                FDB     dsp_c46                 ; $32
+                FDB     dsp_c46                 ; $33
+                FDB     dsp_c46                 ; $34
+                FDB     dsp_c46                 ; $35
+        IFDEF SUBSYS_AV
+                FDB     line15_entry            ; $36
+        ELSE
+                FDB     dsp_c46                 ; $36
+        ENDC
+                FDB     dsp_c46                 ; $37
+                FDB     dsp_c46                 ; $38
+        IFDEF SUBSYS_AV
+                FDB     c39_entry               ; $39
+        ELSE
+                FDB     dsp_c46                 ; $39
+        ENDC
+                FDB     dsp_c46                 ; $3A
+                FDB     dsp_c46                 ; $3B
+                FDB     dsp_c46                 ; $3C
+                FDB     settimer_entry          ; $3D
+                FDB     readtimer_entry         ; $3E
+                FDB     cmd_3f_bytecode         ; $3F
+;--- dsp_c46 — 受け付けないコード = コマンドコードの誤り ---
+dsp_c46:
+                LDA     #$46
+                JMP     cmd_err
+        IFDEF SUBSYS_AV
+cmd_avx:
                 FDB     c45_entry               ; $45 キーエンコーダ命令
-                FDB     c7f_entry       ; $7F 共有 RAM 相対 3 ($D383) からの処理を JSR で実行
-                FDB     c22_entry               ; $22 表示ページ・処理ページの選択
-                FDB     c39_entry               ; $39 枠付きの矩形の塗り
-                FDB     line15_entry    ; $36 LINE 2 ($15 と同じ経路で引く)
+                FDB     c7f_entry               ; $7F 共有 RAM 相対 3 ($D383) からの処理を JSR で実行
 ;--- hook_tmpl — 割込みフックテーブルの初期値 (リセットで $D2A8- へ写す) ---------------
 hook_tmpl:
                 JMP     hdlr_SWI3       ; $D2A8 SWI3
@@ -720,23 +705,14 @@ c7f_entry:
                 JMP     SH_PARAM
         ENDC
 
-;--- pt_fill — スパン塗り: D=塗れる区間左端 → [D..右境界-1] を塗る -------------
-;   戻り値 D = 右境界 X。水平 1 行は draw_line の hline_blit 高速経路で一括。
-;   draw_line は自前で直接ページを確立・復元するため、塗りつぶし側の直接ページ
-;   ($D0) を退避するラッパは要らない。SUBSYS_AV の組み立てでは、ラインドロワで
-;   引く avd_nc で塗る (Type-B の位置は 4 回、Type-A の位置は 1 回。区間は描画範囲の中
-;   なので切り取らない)。
-pt_fill:
-                STD     <WK_LN_X0
-                JSR     pt_scan_rb              ; 右境界
-                PSHS    A,B
-                SUBD    #1
-                BSR     pt_hln
-                PULS    A,B,PC          ; D = 右境界
-
-;--- pt_hln — D を右端、PT_CY を Y として水平の区間を 1 本引く --------------------
-;   pt_fill と pt_lov が共用する。
+;--- pt_hln — 区間 [PT_TX..PT_EX] を行 PT_CY に 1 本引く ------------------------
+;   水平の 1 行は draw_line の hline_blit の経路で引く (draw_line は呼出元の直接ページ
+;   $D0 をそのまま使い、退避した DP を戻して返る)。SUBSYS_AV の組み立てでは、ラインドロワで引く avd_nc で塗る
+;   (Type-B の位置は 4 回、Type-A の位置は 1 回。区間は描画範囲の中なので切り取らない)。
 pt_hln:
+                LDD     <PT_TX
+                STD     <WK_LN_X0
+                LDD     <PT_EX
                 STD     <WK_LN_X1
                 LDD     <PT_CY
                 STD     <WK_LN_Y0
@@ -746,13 +722,10 @@ pt_hln:
         ELSE
                 BRA     draw_line
         ENDC
-
         IFNDEF SUBSYS_AV
 ;------------------------------------------------------------------------------
 ; do_rect_pre — 矩形描画 (枠/塗潰し)。WK_RECT_X0/Y0/X1/Y1 と WK_COLOR を設定済で呼ぶ
 ;   (line15_entry 用)。入力: A = モード (0=枠、1=塗潰し)
-;   フレームは A (モード) のみ退避。本体は A/B しか使わず、呼出元はレジスタ保存に
-;   依存しない。描画中に NMI が重なった際のスタック最深部を浅くする (常駐データ域の保全)。
 ;------------------------------------------------------------------------------
 do_rect_pre:
                 PSHS    A
@@ -816,12 +789,7 @@ dr_word:
 ;   主軸 (長い方の軸) に沿って 1 ドットずつ進め、誤差の累積が従軸の長さを
 ;   下回るたびに従軸を 1 つ進める。水平線は hline_blit へ。
 ;------------------------------------------------------------------------------
-; 直線のワーク (直接ページ $D0 の空き変位に割当。実効アドレス $D064-$D06D)
-;   直接ページ $D3 の変位 $40- は機能キー定義表 (1 件 16 byte × 11、キー番号 9 の
-;     枠) の実体である。定義表は利用者が設定した内容を保持し続ける器であり、
-;     描画中だけ生きるスクラッチとは時間排他が成り立たない (線を 1 本引くだけで
-;     定義が壊れる)。よって描画スクラッチは定義表の外 = 直接ページ $D0 の空き
-;     変位へ置く。
+; 直線のワーク ($D064-$D06D を使う)
 LN_DX           EQU     $64             ; 2: |X1-X0|
 LN_DY           EQU     $66             ; 2: |Y1-Y0|
 LN_SX           EQU     $68             ; 2: X の進み (+1 / -1)
@@ -1017,18 +985,16 @@ fk_done:
                 ANDCC   #$BF                    ; FIRQ マスク解除
 
 ;==============================================================================
-; CONSOLE の機能キー行表示 (CONSOLE 文の第 3 引数。
-; 参考書籍の相対 8 (FD))
+; 機能キー行の表示
 ;==============================================================================
 
 ;--- pf_show — 機能キー行 (画面の下から 2 行) を描く --------------------------------
-;   $01 の相対 8 (FD) が非 0 のときだけ描き、0 なら何もしない (参考書籍)。参考書籍が定めない
-;   細部は次のとおり定める:
+;   $01 の相対 8 (FD) が非 0 のときだけ描き、0 なら何もしない (参考書籍)。配置は次のとおり:
 ;     ・上の行に 1〜5、下の行に 6〜10 を置く。1 個の欄は桁数の 1/5 (80 桁: 16、
 ;       40 桁: 8) で、定義文字列を欄の左端から欄幅まで置き、余りは空白で埋める
 ;       (前の定義が残らない)。欄幅を超える文字は描かない。
 ;     ・文字は現在の文字色。定義中の制御コードは字形表のまま描く。
-;   呼出: $01 (消去の有無を問わず)、$2A (定義変更)、全画面消去 (vram_fill_bg) の出口。
+;   呼出: $01 (消去の有無を問わず)、$2A (定義変更)、全画面消去 (vfb_range から続く) の出口。
 ;   A,B,X,Y,U を保存する。
 pf_show:
                 TST     <WK_PF_SHOW
@@ -1084,8 +1050,8 @@ pfs_put:
 
 ;--- con_page_wait / con_wait_key — 表示動作の停止と、その解除待ち ------------
 ;   ページウェイト (コンソール制御の CF bit3) が有効なとき、画面の最終位置への
-;     出力と最終行での LF でベルを鳴らして止まり、[BREAK] と [PF] 以外のキーで
-;     再開する。
+;     出力と最終行での LF でベルを鳴らして止まり、キーバッファから取り出せたキー
+;     (PF の定義から展開された文字を含む) で再開する。
 ;   [ESC] によるプットウェイトも解除条件は同じなので、解除待ちだけを
 ;     con_wait_key として共用する。
 ;   [BREAK] はキーバッファへは入らず、[PF] キーも文字列の生成か割込みの発生の
@@ -1125,18 +1091,9 @@ kb_flush:
                 RTS
 
 ;------------------------------------------------------------------------------
-; cmd_0a_getbufadr — Get Buffer Address ($0A)
-;   参考書籍: コンソール入力位置 (カーソル座標) を返す。
-;   $D383 = カーソル列 (X), $D384 = カーソル行 (Y)。メイン側はこの戻り値で
-;   コンソールカーソルを追跡し、後続のカーソル制御に用いる。
-;------------------------------------------------------------------------------
-                ; 本体は c0a_ext (コード域)。行はスクロール範囲相対で返す。
-                ; この区画は $E1FF ピンまでで独立しており、他の区画へは影響しない。
-
-;------------------------------------------------------------------------------
 ; cmd_0b_tabset — TABSET ($0B、動作観察)
 ;   $D383〜 10 byte = 80 桁ぶんのタブストップビットマップを、TAB_TABLE
-;   (サブ側ワーク RAM の配置) へ複写する (メイン CPU 側の BASIC が起動時に発行する)。
+;   (サブ側ワーク RAM の配置) へ複写する。
 ;------------------------------------------------------------------------------
 cmd_0b_tabset:
                 TFR     U,X             ; X = 共有 RAM 相対 3 ($D383)
@@ -1169,22 +1126,6 @@ i29_done:
                 STD     >SH_PARAM               ; $D383 = キーコード / $D384 = 有無
                 RTS
 
-;==============================================================================
-; line15_entry — cmd $15 LINE 本体
-;   入口のパラメータ配置:
-;     $D383 = 色 (下位 3bit), $D384 = 描画ファンクション (0-4。1=PRESET は背景色で
-;             描画、>4 は不正として描かない。2-4 の論理合成は PSET 扱いの簡略),
-;     $D385-6 = X0, $D387-8 = Y0, $D389-A = X1, $D38B-C = Y1,
-;     $D38D = 形状 (0=直線 / 1=矩形枠 / それ以外=塗潰し矩形)
-;   範囲外座標の扱い: 端点座標が 1 ワードでも画面外なら、この命令は
-;   何も描かずに正常終了する (応答フラグは通常どおり落とす)。画面内は X が
-;   0-639、Y が 0-199 で、負数は符号無し比較で巨大値となるため同じ判定で外れる。
-;   直線・矩形枠・塗潰し矩形の 3 形状に共通で、折線 ($16)・点列 ($17)・
-;   塗りつぶしの種点 ($18) も同じ規則で揃える。画面内へ丸めて描く実装は
-;   端点を境界へ寄せる分だけ線の傾きが変わり、画面外へ伸びる線を引く
-;   プログラムに本来無い線が現れるため採らない。座標が範囲内に限られるので、
-;   VRAM 外アドレスへの打点流出 (共有 RAM $C0xx 破壊) は構造的に起きない。
-;==============================================================================
 ;--- dbl_nibble — 4bit ニブルを各ビット倍化した 8bit へ変換するテーブル -------
 ;   bit3→bit7,6 / bit2→bit5,4 / bit1→bit3,2 / bit0→bit1,0
 ;   40桁 (16px倍幅) 文字描画 (dc_dbl_loop) で使用する。参照は絶対アドレスなので
@@ -1267,27 +1208,14 @@ gca_ret:
 ;==============================================================================
 ; gcursor_entry — $1F GRAPHIC CURSOR (参考書籍)
 ;
-;   オペレータの指示した座標を読取る。
-;   コマンド & パラメータ (相対値):
-;     3      CL カーソルの表示色 (0〜7)
-;     4      N  要求する座標数 (1〜10)
-;     5, 6   X  初期座標 X (0〜639)
-;     7, 8   Y  初期座標 Y (0〜199)
-;   応答データ (相対値):
-;     0            E  エラーコード
-;     1, 2         —  不定
-;     3+4(n-1) …   Xn 指定座標 X (16 ビット)
-;     5+4(n-1) …   Yn 指定座標 Y (16 ビット)
+;   相対 3 = カーソルの色、相対 4 = 座標数 (1〜10)、相対 5〜8 = 初期座標 X, Y。
+;   応答は相対 3 から 1 点 4 byte (X, Y を 16 ビットずつ)。
+;   移動キーでカーソルを 1 ステップ動かし、数字キーで 1 ステップのドット数
+;   (0 は 10、1〜9 はその数、初期値 1) を変え、改行キーで座標を読取る。指定の数を
+;   読取ると終了する。[SHIFT] 併用は 1 ステップの移動として扱う。
 ;
-;   オペレータ制御:
-;     ・移動キー: カーソルを 1 ステップ (1〜10 ドット) 指定方向へ動かす
-;     ・数字キー: 1 ステップの移動ドット数を指定する。0 は 10 ドット、
-;       1〜9 はその数字のドット数。初期値は 1
-;     ・改行キー: 座標を読取る。指定された数の座標を読取ると終了する
-;   [SHIFT] 併用は未対応 (1 ステップの移動として扱う)。
-;
-;   カーソルは＋印 (縦横 13 ドットの十字) で表示する。表示前に下地の色を退避し、
-;   移動・終了の前に退避した色へ戻すので、画面は本コマンドの前後で変わらない。
+;   カーソルは＋印 (GC_ARMX / GC_ARMY の腕の十字) で表示する。表示前に下地の色を
+;   退避し、移動・終了の前に退避した色へ戻すので、画面は本コマンドの前後で変わらない。
 ;   画面外へ掛かるドットは打たない (座標範囲は参考書籍のとおり)。
 ;   ワークは SYMBOL のスクラッチを流用する (別コマンドで同時実行しない)。
 ;==============================================================================
@@ -1331,13 +1259,14 @@ gc_nerr:
                 LDA     #$41                    ; 座標数の誤り (参考書籍)
                 JMP     cmd_err
 gc_digit:
-                SUBA    #$30                    ; 参考書籍 数字キー = ステップ数
-                BCS     gc_loop
-                CMPA    #9
-                BHI     gc_loop
-                BNE     gc_step
-                LDA     #10                     ; [0] は 10 ドット
+                SUBA    #$31                    ; 参考書籍 数字キー = ステップ数。[1]〜[9] は 0〜8、[0] は $FF
+                CMPA    #8
+                BLS     gc_step                 ; [1]〜[9] はその数字のドット数
+                INCA
+                BNE     gc_loop                 ; 数字キーでない
+                LDA     #9                      ; [0] は 10 ドット
 gc_step:
+                INCA
                 STA     <WK_SYM_MAGX
                 BRA     gc_loop
 gc_take:
@@ -1353,8 +1282,7 @@ gc_take:
 
 ;--- gc_show / gc_hide — ＋印の表示と消去 -------------------------------------
 ;   横 (GC_ARMX*2+1) ドットと縦 (GC_ARMY*2+1) ドット (中心は共有) の十字。
-;   画面は横 640 ドット・縦 200 ドットで 1 ドットの縦横比が 2 対 1 に近いので、
-;   横の腕を縦の倍に取ると画面上では縦横が同じ長さに見える。表示のときは各ドットの
+;   横の腕を縦の倍に取る。
 ;   下地の色を GC_SAVE へ退避してからカーソル色で打ち、消去のときは退避した色で打つ。
 GC_ARMX         EQU     8                       ; ＋印の腕 (横方向、中心から)
 GC_ARMY         EQU     4                       ; 同 (縦方向)
@@ -1402,22 +1330,14 @@ gcp_vn:
                 BNE     gcp_v
                 RTS
 
-;==============================================================================
-; パターン合成ルーチン群 (通常配置。アドレスは固定しない)
-;   コマンドディスパッチ経由の描画プリミティブから使う、ワーク RAM のパターンを
-;   VRAM へ 1 byte 単位で合成する共通処理。
-;   呼出規約: X=VRAM 先頭, U=対象アドレス, カウントとパターンは DP=$D0 のワーク,
-;   $D409=VRAM プレーン選択ゲート。呼出側が DP=$D0 を整えて呼ぶ。
-;==============================================================================
 ;--- 端バイトマスク表 (put-block ブリット共用) ---------------------------------
-;   参照は `LDX #pbf_tbl_l` の即値のみで位置に依存しない。
 pbf_tbl_l:                                      ; 左端: $FF >> (X0&7)
                 FCB     $FF,$7F,$3F,$1F,$0F,$07,$03,$01
 pbf_tbl_r:                                      ; 右端: 上位 (X1&7)+1 bit
                 FCB     $80,$C0,$E0,$F0,$F8,$FC,$FE,$FF
 
 ;------------------------------------------------------------------------------
-; chgcol_entry — Change Color 本体 (cmd_1a_chgcol から JMP)
+; chgcol_entry — Change Color 本体
 ;------------------------------------------------------------------------------
 chgcol_entry:
                 BSR     rect_from_param         ; 参考書籍の相対 3〜10 = 対角線座標
@@ -1481,15 +1401,14 @@ rect_from_param:
                 RTS
 
 ;==============================================================================
-; 追加コマンド実装 ($1A Change Color / $19 PAINT / 共通 get_pixel_color)
-;   dispatch table は前段の cmd_19_paint / cmd_1a_chgcol stub から JMP で飛ぶ。
+; $1A Change Color / 共通 get_pixel_color
 ;==============================================================================
 
 ;------------------------------------------------------------------------------
 ; get_pixel_color — VRAM の現 (WK_PX_X, WK_PX_Y) のドット色を A に返す
 ;   入力: WK_PX_X (16bit), WK_PX_Y (16bit, low byte 使用)
 ;   出力: A = 色コード (0-7)
-;   破壊: B, X, Y, U, CC
+;   破壊: B, CC (X, Y, U は保つ)
 ;------------------------------------------------------------------------------
 get_pixel_color:
                 PSHS    X,Y,U
@@ -1545,65 +1464,60 @@ cc_next_y:
                 BRA     cc_y_loop
 
 ;------------------------------------------------------------------------------
-; readtimer_entry — READ TIMER ($3E、参考書籍)。$D00B-$D01B (17byte) を $D384+ へ。
+; readtimer_entry — READ TIMER ($3E、参考書籍)。タイマワーク (TM_TC-) を $D384+ へ。
 ;------------------------------------------------------------------------------
 readtimer_entry:
-                COM     <TM_GUARD
+                INC     <TM_GUARD
                 LEAY    1,U
                 LDX     #TM_TC
 rt_copy:
-                LDD     ,X++                    ; 2 byte ずつ 8 回 ($D00B-$D01A)
+                LDD     ,X++                    ; 2 byte ずつ 8 回
                 STD     ,Y++
                 CMPX    #TM_END-1
                 BLO     rt_copy
-                LDA     ,X                      ; 残り 1 byte ($D01B)
+                LDA     ,X                      ; 残り 1 byte (TM_END-1)
                 STA     ,Y
                 ; fall through
 
 ;------------------------------------------------------------------------------
-; timer_complete — SET / READ TIMER の完了 (周期処理を 1 回反映する)。
+; timer_complete — SET / READ TIMER の完了。
 ;------------------------------------------------------------------------------
 timer_complete:
-                COM     <TM_GUARD
-                BEQ     tc_done
-                ORCC    #$40                    ; FIRQ マスク
-                JSR     nmi_subwork             ; 周期処理 (DP=$D0 のまま戻る = 常用 DP)
-                ANDCC   #$BF                    ; FIRQ マスク解除
-                CLR     <TM_GUARD
-tc_done:
-                RTS
+                RTS                             ; 見送った周期処理は main_loop が命令の終わりに反映する
 
 ;------------------------------------------------------------------------------
 ; settimer_entry — SET TIMER ($3D、参考書籍)
 ;   $D383=ビットマスク, $D384=フラグ値, $D385+=4byte フィールド群。マスク bit0 →
-;   $D00B(フラグ), bit1-4 → $D00C/$D010/$D014/$D018 (RTC比較/アラーム/インターバル
-;   カウンタ/リロード) を選択コピー。設定後 timer_complete で NMI 作業を反映。
-;   タイマ作業域 $D00B-$D01B は絶対アドレス (DP 不定の文脈から入るため)。
+;   TM_TC(フラグ), bit1-4 → TM_CLK/TM_T1I/TM_T2/TM_T2D (時刻/予約時刻/インターバル
+;   カウンタ/リロード) を選択コピーし、timer_complete へ続く。
 ;------------------------------------------------------------------------------
 settimer_entry:
-                COM     <TM_GUARD       ; NMI 側の更新を一旦止める
-                TFR     U,X             ; X → 選択マスク
-                LDD     ,X++                    ; A=選択マスク, B=フラグ値, X→$D385
-                LDY     #TM_CLK         ; Y → 最初の 4 バイト群 (時刻カウンタ)
+                INC     <TM_GUARD       ; 設定の間は周期処理を止める
+                LDD     ,U++                    ; A = 選択マスク、B = フラグ値。U → 最初の 4 バイト群
+                ANDA    #$1F                    ; bit0 = フラグ値、bit1〜bit4 = 4 バイト群
+                LDY     #TM_CLK         ; Y → 最初の群の置き先 (時刻カウンタ)
                 LSRA                            ; bit0: フラグ値を採るか
-                BCC     st_group
+                BCC     st_rest
                 STB     <TM_TC          ; TC = フラグ値
-st_group:
-                LDB     #$04                    ; bit1-bit4 = 4 バイト群 4 個
+st_rest:
+                TSTA
+                BEQ     timer_complete          ; 採る群が無い
+                ; マスクに 1 が残る間だけ回る。採らない群は st_skip で読み飛ばす
+                ; (0 を送り出した後もマスクには 1 が残っているので、そのまま戻る)。
 st_loop:
                 LSRA                            ; その群を採るか
-                BCC     st_next
-                LDU     2,X                     ; 群の後半 2 バイト
-                STU     2,Y
-                LDU     ,X                      ; 群の前半 2 バイト
-                STU     ,Y
-st_next:
-                LEAY    4,Y                     ; 次の群へ (転送先)
-                LEAX    4,X                     ; 次の群へ (パラメータ欄)
-                DECB
+                BCC     st_skip
+                PULU    X                       ; 群の前半 2 バイト
+                STX     ,Y++
+                PULU    X                       ; 群の後半 2 バイト
+                STX     ,Y++
+                TSTA
                 BNE     st_loop
                 BRA     timer_complete
-
+st_skip:
+                LEAU    4,U                     ; 次の群へ (パラメータ欄)
+                LEAY    4,Y                     ; 次の群へ (置き先)
+                BRA     st_loop
 ;------------------------------------------------------------------------------
 ; intctl_entry — Interrupt Control ($2C)。参考書籍。
 ;   相対 3,4 = IC (16 ビットの割込制御フラグ)。下位 10 ビットが PF1〜PF10 の
@@ -1617,9 +1531,7 @@ intctl_entry:
                 ORCC    #$40                    ; F フラグ: 設定中は FIRQ を止める
                 LDD     0,U                     ; 相対 3,4 = IC (16bit)
                 STD     2,U                     ; 走査用の作業複写 (本命令が使わない欄)
-                ; 枠の前進は「周の頭で B ぶん進める」形にする。起点は PF1 の 1 枠手前、
-                ;   終りは最終枠 (PF10) の位置で、枠に触れるのは前進した後だけなので
-                ;   起点の 16 byte (PF 番号 0 = 枠が無い) は読み書きしない。
+                ; 枠の前進は周の頭で B ぶん進める形にする。
                 LDB     #16                     ; 枠の間隔
                 LDX     #KB_PF_BASE             ; X → PF1 の 1 枠手前
 ic_loop:
@@ -1641,13 +1553,12 @@ pely_err:
                 STB     >SH_ERR
                 PULS    B,PC
 pe_locy:
-                ; A = 行。本体は ROM 末尾コード域 (pely_ext)。復帰 (PULS B,PC) は
-                ; pely_ext 側で行う。
+                ; A = 行。本体は pely_ext。
 
 ;--- pely_ext — SBA オーダ (参考書籍) の Y 座標の本体 ----------
 ;   $12 X Y。座標の上限は X が桁数-1、Y が行数-1 (画面の 1 行の文字数と行数の
 ;   設定による)。上限を越える指定はコンソール座標値の誤り ($3D、参考書籍) と
-;   してバッファアドレスを変えない。pe_locy から JMP。
+;   してバッファアドレスを変えない。
 ;   スタックに B (呼出元保存) が積まれた状態で入る (PULS B,PC で復帰)。
 pely_ext:
                 CMPA    <WK_SCREEN_H
@@ -1681,7 +1592,6 @@ pe_locx:
                 BRA     pe_p1
 ;--- エスケープパラメータ受信: 種別に応じて処理し状態クリア ---
 ;   B (呼出元 cmd_03_console の文字数カウンタ) を破壊しないこと。
-;   本体は ROM 末尾の空き領域 (pc_esc_ext) に配置。
 pc_esc_param:
 
 ;==============================================================================
@@ -1692,7 +1602,7 @@ pc_esc_param:
 ;   入口 pc_esc_param (putchar 内) から入る。A = 受信したデータバイト。
 ;   WK_ESC_STATE 種別: $11=SF のアトリビュート文字 / $12=SBA の X / $92=SBA の Y
 ;                      / $13=RC の文字数 / $93=RC の文字コード
-;                      / $1B=Lock Keyboard 等の 2 バイト目 (読み捨てる)。
+;                      / $1B=Lock Keyboard 等の 2 バイト目。
 ;   X/B (呼出元 cmd_03_console のポインタ/文字数カウンタ) を破壊しないこと。
 pc_esc_ext:
                 PSHS    B                       ; B 保存 (ループカウンタ)
@@ -1710,12 +1620,9 @@ pc_esc_ext:
                 BEQ     pe_rcc
 
 ;--- pe_esc2 — $1B で始まるオーダシーケンス (参考書籍) ---
-;   入口 pe_esc_ext から LBRA。A = ESC の次のバイトで、B は退避済 (自由に使える)。
-;   参考書籍の一覧に無い 2 バイト目は読み捨てる。共有 RAM 相対 0 は
-;   0 のまま (STAGE_ALT_RAM はオーダシーケンスの誤り $3E (参考書籍) を置く)。
-;   先行入力の許可 / 停止 ($67 / $68) は状態を保つ。停止したときにキーバッファの
-;   キーコードは捨てない (捨て去るのは Erase Key Buffer ($39) と $29 INKEY の
-;   RESET フラグである)。
+;   入口 pc_esc_ext から続く。A = ESC の次のバイトで、B は退避済。
+;   受け付けない 2 バイト目は読み捨てる (共有 RAM 相対 0 は 0 のまま)。
+;   先行入力の許可 / 停止 ($67 / $68) は状態を保つ。
 pe_esc2:
                 CMPA    #$39                    ; Erase Key Buffer
                 BEQ     pe_es_erase
@@ -1769,10 +1676,8 @@ pe_rcx:
                 PULS    B,PC
 
 
-                ; $16 CHAIN — N 点ポリライン。本体は chain16_entry。
-                ; 1 点でも範囲外の座標があれば描かない。
 
-;--- ptk_ch — pbb_take n<8 用 16bit 左シフトチェーン (空き領域) ----------------
+;--- ptk_ch — pbb_take n<8 用 16bit 左シフトチェーン ------------------------
 ;   入口 = ptk_ch + (7-n)*2 (ptk_slow が計算)。D=ACC を n 回左シフトして書戻し、
 ;   スタックの戻り値 (取り出しビット) を A へ復帰して RTS。
 ptk_ch:
@@ -1796,7 +1701,6 @@ ptk_ch:
 ;------------------------------------------------------------------------------
 ; putchar — 1 文字描画 (A=コード、現在カーソル位置に)
 ;   カーソル位置を進める。
-;   簡易実装: ASCII 印字可能範囲のみ対応、改行/タブ等は無視
 ;------------------------------------------------------------------------------
 putchar:
                 ; --- エスケープパラメータ待ち中か? ---
@@ -1805,15 +1709,13 @@ putchar:
                 ; --- 表示状態: 制御コードを「動作」で扱うか「字形」で描くか ---
                 ;   コンソール制御 ($0C) のパラメタ bit1 が 0 の間は、$00-$1F も
                 ;   フォントの字形として 1 桁ぶん描く (参考書籍の表示状態切替)。
-                ;   判定は区画の予算の都合で ctl_order_act (空きのある区画) に置き、
-                ;   字形表示中は同ルーチンが戻りアドレスを捨てて pc_print へ跳ぶ。
+                ;   字形表示中は ctl_order_act が pc_print へ跳ぶ。
                 CMPA    #$20
                 BCC     pc_print                ; $20 以上は常に字形
                 BSR     ctl_order_act           ; 字形表示中なら戻らず pc_print へ
                 BSR     sf_seq_chk              ; SF の一連の文字列に入らないオーダなら一連を終える
                 ; --- オーダ (副指令) の判定 — 参考書籍のオーダ一覧 ---
-                ;   ここでは近くに本体がある分だけを判定し、残り (EL / BEL / HT /
-                ;   HOME / カーソル移動) は ROM 末尾の区画 (pc_ord_ext) で受ける。
+                ;   残りは pc_ord_ext で受ける。
                 CMPA    #$0D                    ; CR (参考書籍)
                 BEQ     putchar_cr
                 CMPA    #$0A                    ; LF (参考書籍)
@@ -1840,7 +1742,7 @@ pc_print:
                 CLR     <WK_CURSOR_X
                 ; fall through to LF
 putchar_lf:
-                JMP     pc_lf_ext               ; 行送り (本体は別の区画)
+                JMP     pc_lf_ext               ; 行送り
 ;--- エスケープ開始: 種別 ($11/$1B) を覚えて次バイトを待つ ---
 pc_begin_esc:
                 STA     <WK_ESC_STATE
@@ -1855,8 +1757,6 @@ coa_ret:
 ;     0 = 字形として表示             → 戻りアドレスを捨てて pc_print へ跳ぶ
 ;   B は呼出元 cmd_03_console の文字数カウンタなので保存する (putchar 契約)。
 ;     PSHS/PULS は CC を変えないので、ANDB の Z は PULS を跨いで生き残る。
-;   putchar が在る区画は残り byte が乏しいため、判定本体は別の区画へ置き、
-;   呼出側は JSR 3 byte だけを置く。参照はラベル経由のみで位置依存はない。
 ctl_order_act:
                 PSHS    B
                 LDB     <WK_CSCTL       ; 表示制御ワーク (コンソール制御の現在値)
@@ -1939,21 +1839,11 @@ ps_pzero:
                 STA     IO_VRAM_GATE            ; gate OFF (書込で閉じる)
                 PULS    A,B,X,Y,U,PC
 
-;------------------------------------------------------------------------------
-; cmd_20_chline — Character Line (LINE@ 文字形式、動作観察)
-;   $D383=属性, $D384=文字, $D386/$D388/$D38A/$D38C = X0,Y0,X1,Y1 (文字座標)。
-;   本体は ROM 末尾空き領域 (chline_entry)。
-;   クリッピング枠 (WK_VIEW_*) は FM-7 の組ではどの描画経路からも参照されないため、
-;   このコードにクリッピング枠設定は持たせない (SUBSYS_AV の組では $39 が設定し、
-;   $15 / $16 / $18 の描画範囲になる)。
-;------------------------------------------------------------------------------
-
 ;==============================================================================
 ; 描画プリミティブ
 ;==============================================================================
 
 ;------------------------------------------------------------------------------
-; vram_clear_all — B/R/G 全 16KB × 3 を 0 で埋める
 ;------------------------------------------------------------------------------
 ; pset_internal — 内部用 1 dot 描画
 ;   入力: WK_PX_X (X 座標 2B), WK_PX_Y (Y 座標 2B), WK_COLOR (色 0-7)
@@ -2031,6 +1921,12 @@ gpa_done:
                 STA     <PBF_MASK
                 RTS
 
+;------------------------------------------------------------------------------
+; gr_pixaddr — WK_PX_X / WK_PX_Y から 1 ドットのアドレスとマスクを求める共通処理。
+;   出力: U = B プレーン内 byte オフセット / PBF_MASK = $80 >> (X & 7)
+;   破壊: A, B, WK_TMP。X / Y は保つ。打点 (pset_internal) と画素色の読出し
+;   (get_pixel_color) が共用する。
+;------------------------------------------------------------------------------
 gr_pixaddr:
                 LDA     <WK_PX_Y+1               ; row_offset = Y * 80
                 LDB     #80
@@ -2051,12 +1947,6 @@ gpa_shift:
                 DECB
                 BRA     gpa_shift
 
-;------------------------------------------------------------------------------
-; gr_pixaddr — WK_PX_X / WK_PX_Y から 1 ドットのアドレスとマスクを求める共通前段
-;   出力: U = B プレーン内 byte オフセット / PBF_MASK = $80 >> (X & 7)
-;   破壊: A, B, WK_TMP。X / Y は保つ。打点 (pset_internal) と画素色の読出し
-;   (get_pixel_color) が共用する。
-;------------------------------------------------------------------------------
 ;--- d_lsr3 — D を 3 ビット右へずらす (座標 → バイト単位) ----------------------
 ;   図形・矩形書込み・塗り潰しが共用する。D 以外のレジスタは触らない。
 ;   3 段ぶんの展開列は d_rsh8 の後ろ 3 段がそのまま使えるので、その入口の別名にする
@@ -2067,20 +1957,13 @@ d_lsr3          EQU     d_rsh8+8
 ; hline_blit — draw_line の水平線 (Y0==Y1) 専用バイト単位ブリット高速経路
 ;   水平線はバイト単位で書く。
 ;   左端/右端は部分マスクの read-modify-write、中間バイトはプレーン充填値の
-;   直書きで 1 行を一括処理する。$15 (塗潰し/枠上下辺)・$06/$07 (do_rect)・
+;   直書きで 1 行を一括処理する。$15 (塗潰し/枠上下辺)・矩形描画 (do_rect_pre)・
 ;   $16 の水平線分すべてが本経路を通る。
 ;
 ;   入口: draw_line 先頭 (PSHS A,B,DP,X,Y,U 済) から LBEQ で遷移。
 ;   出口: WK_LAST_X/Y を更新し PULS で全レジスタ復元。
 ;   範囲外座標 (X>=640 / Y>=200) は汎用の Bresenham 経路へ戻す。
-;   BSR/PSHS を一切使わない (スタック追加消費 0)。描画中のスタックを浅く保つため。
-;   ワークは直線 DDA 用スクラッチ ($D064-) を流用 (水平経路では未使用)。入口の
-;   draw_line が直接ページ $D0 を確立済みなので、そのまま直接アドレッシングで届く。
-;   左端 X の 1 ワード (2 バイト) だけは PSET 用 X 座標 ($D070-$D071) を借りる。本経路は 1 dot
-;   打点ルーチンを一度も呼ばず (hline_blit には JSR/BSR が 1 つも無い)、かつ
-;   汎用経路 (dl_general) の側が同じ PSET 用座標を走査位置として無条件に
-;   上書きするため、呼出元は draw_line を跨いで PSET 用座標を生かしておけない。
-;   よって本経路が借りている間 PSET 用座標はどちらの経路から見ても死んでいる。
+;   $D064- と $D070 を借りる (同時に使わない)。
 ;==============================================================================
 HL_XL           EQU     $70             ; 2: 左端 X (昇順正規化後)。後半は XL>>3 (16bit)
 HL_XR           EQU     $64             ; 2: 右端 X
@@ -2224,17 +2107,9 @@ hl_ep0:
         ENDC
 
 
-;------------------------------------------------------------------------------
-; cmd_01_screen — SCREEN ($D384=W, $D385=H)
-;------------------------------------------------------------------------------
-                ; 本体は ROM 末尾 c01_ext (全パラメータ検証 → モード設定 → 消去)。
-                ; 検証に合格するまでワークへ一切書かない。誤ったパラメータでワークを
-                ;   変えないため。
-
 ;--- chl_fill — $20 ボックスフラグ 2: 矩形塗潰し (行ループ、本体は cl_line) ---
 ;   Y0..Y1 の各行に水平の文字直線を引く。Y0>Y1 は正順化。終端行は CL_END に
 ;   保持 (cl_line が CL_* スクラッチを使うため呼出間で生存する別バイト)。
-;   chl_disp (別の空き領域) から LBEQ で飛んでくる。
 chl_fill:
                 LDA     5,U                     ; Y0
                 LDB     9,U                     ; Y1
@@ -2256,7 +2131,7 @@ chf_loop:
 
 ;--- cl_edge — 端点の欄 1 つを差し替えて直線を 1 本引き、元の値へ戻す ----------
 ;   X = 差し替える欄のアドレス、U = 差し替える値のあるアドレス。
-;   復帰時 A = 戻した元の値 (右辺がそのまま使う)。B/X/U 破壊。
+;   復帰時 A = 戻した元の値 (右辺がそのまま使う)。B/U 破壊 (X は保つ)。
 cl_edge:
                 LDB     ,U
                 LDA     ,X
@@ -2269,23 +2144,33 @@ chf_done:
                 RTS
 
 ;------------------------------------------------------------------------------
-; $1E の汎用経路もバイトブリットエンジン (pbb2_entry、ROM 末尾) が受け持つ。
 ;------------------------------------------------------------------------------
 
 ;==============================================================================
 ; chl_disp — $20 Character Line ボックスフラグ ($D38D) 分岐 (動作観察)
 ;   0=直線 / 1=矩形の 4 辺枠 / 2=矩形塗潰し / 3 以上=直線フォールバック。
 ;   cl_line は端点を SH_PARAM+3/+5/+7/+9 (X0,Y0,X1,Y1) から読むため、
-;   辺ごとに端点を書換えて呼ぶ (元値は都度退避・復元)。塗潰し本体 chl_fill
-;   は別の空き領域に配置 (本区画の残量都合)。
+;   辺ごとに端点を書換えて呼ぶ (元値は都度退避・復元)。
 ;==============================================================================
 chl_disp:
                 LDA     10,U                    ; $D38D = ボックスフラグ
                 CMPA    #1
                 BEQ     chl_frame
                 CMPA    #2
-                BEQ     chl_fill                ; 2 = 塗潰し (別区画)
+                BEQ     chl_fill                ; 2 = 塗潰し
                 BRA     cl_line                 ; 0/3 以上 = 直線 1 本 (末尾呼び)
+
+;--- cl_absd — A = |4,X - ,X| (端点の差の絶対値)、B = その向き (+1 / $FF) -------
+cl_absd:
+                LDB     #$01
+                LDA     4,X
+                SUBA    ,X
+                BCC     cla_ret
+                NEGA
+                NEGB                            ; B = $FF (負の向き)
+cla_ret:
+                RTS
+
 chl_frame:
                 ; 4 辺とも「端点の欄を 1 つだけ差し替えて 1 本引き、元へ戻す」
                 ;   同じ並びなので cl_edge にまとめてある。
@@ -2301,81 +2186,102 @@ chl_frame:
                 ; --- 右辺: (X1,Y0)-(X1,Y1) --- (A = 戻した X1 のまま)
                 STA     >SH_PARAM+3             ; X0 ← X1
 
-;--- cl_line — (X0,Y0)-(X1,Y1) に CL_CHR/CL_ATR で文字直線 (DDA) を引く -------
+;--- cl_line — (X0,Y0)-(X1,Y1) に CL_CHR/CL_ATR で文字直線を引く -----------------
 ;   端点は SH_PARAM+3/+5/+7/+9 から読む (chl_disp が辺ごとに書換えて呼ぶ)。
-;   A/B/X 破壊。CL_ATR/CL_CHR は不変。
+;   線は桁か行のどちらかへ 1 歩ずつ進む階段 (斜めには進まない) で、段の角の
+;   セルは上下の両方の段に置かれる。セルの数は |dx| + |dy| + 1。
+;   行を送る位置は、両端から中央へ向かって引いたときの形 (参考書籍と
+;   動作観察): 始点側は理想の線が行の中央を越えた最初の桁、終点側は
+;   その鏡像。そこで始点から歩数の半分 ((dx+dy+1)/2) だけ歩き、歩いたセルと
+;   その鏡像 (X0+X1-x, Y0+Y1-y) の両方に文字を打つ。
+;   歩き方 (桁方向が長いとき): 蓄積 e (始め 0) が (dx+1)/2 以上なら行を送って
+;   e -= dx、そうでなければ桁を進めて e += dy。行方向が長いときは対称に、
+;   e が -(dy+1)/2 以下なら桁を進め、そうでなければ行を送る (CL_T に ±のしきい値、
+;   CL_MAJ に等しいときの向きを持つ)。dx = dy (45 度) だけは角を置かず斜めに
+;   1 歩ずつ進む (動作観察)。
+;   A/B/X/U 破壊。CL_ATR/CL_CHR は不変。
 cl_line:
-                LDA     >SH_PARAM+3             ; 現在セル = (X0,Y0)
-                STA     <CB_DCOL
-                LDA     >SH_PARAM+5
-                STA     <CB_DROW
-                LDB     #$01                    ; dx = |X1-X0|, 方向 = ±1
-                LDA     >SH_PARAM+7
-                SUBA    >SH_PARAM+3
-                BCC     chl_dx
-                NEGA
-                LDB     #$FF
-chl_dx:
-                STA     <CL_DX
-                STB     <CL_SX
-                LDB     #$01                    ; dy = |Y1-Y0|, 方向 = ±1
-                LDA     >SH_PARAM+9
-                SUBA    >SH_PARAM+5
-                BCC     chl_dy
-                NEGA
-                LDB     #$FF
-chl_dy:
-                STA     <CL_DY
-                STB     <CL_SY
-                LDA     <CL_DX                  ; 主軸判定
-                CMPA    <CL_DY
-                BCS     chl_ymaj
-                ; --- 桁主軸: dx ステップ + dy 蓄積 ---
-                STA     <CL_N
+                LDX     #SH_PARAM+3             ; X → X0 (+0), Y0 (+2), X1 (+4), Y1 (+6)
+                LDA     ,X                      ; 現在セル = (X0,Y0)
+                LDB     2,X
+                STD     <CB_DCOL
+                ADDA    4,X                     ; 両端の和 (X0+X1, Y0+Y1) = 鏡像の計算用
+                ADDB    6,X
+                STD     <CL_SUM
+                BSR     cl_absd                 ; dx = |X1-X0|, 方向 = ±1
+                STD     <CL_DX
+                LEAX    2,X
+                BSR     cl_absd                 ; dy = |Y1-Y0|, 方向 = ±1
+                STD     <CL_DY
+                ADDA    <CL_DX                  ; 歩数 = (dx+dy+1)/2 (残りは鏡像が埋める。45 度は dx)
+                INCA
                 LSRA
+                CLRB                            ; B = 0: e の初期値 (CL_ACC) と主軸の印の初期値
+                STD     <CL_N                   ; CL_N と CL_ACC (隣接)
+                LDA     <CL_DY                  ; しきい値 = (主軸の長さ+1)/2、主軸の印
+                CMPA    <CL_DX                  ;   B = 0: 行方向が長い
+                BHI     chl_tset
+                BNE     chl_cmaj
+                CLR     <CL_DY                  ;   dx = dy (45 度): e を増やさず、桁を進めるたびに行も送る
+                LDB     #2                      ;   (下の DECB で B = 1)
+chl_cmaj:
+                LDA     <CL_DX
+                DECB                            ;   B = $FF: 桁方向が長い (45 度は 1)
+chl_tset:
+                INCA
+                LSRA
+                TSTB
+                BNE     chl_tst2
+                NEGA                            ; 行方向が長いときは -T を持つ
+chl_tst2:
+                STD     <CL_T                   ; CL_T と CL_MAJ
+chl_loop:
+                BSR     cl_plot                 ; 現在セル
+                LDU     <CB_DCOL                ; 鏡像のセル (X0+X1-x, Y0+Y1-y) にも打つ
+                LDD     <CL_SUM                 ;   (下位の行の差は借りを出さない: Y0+Y1 >= y)
+                SUBD    <CB_DCOL
+                STD     <CB_DCOL
+                BSR     cl_plot                 ;   (cb_drawcell は U を保つ)
+                STU     <CB_DCOL
+                DEC     <CL_N                   ; 残り歩数 (負になったら終わり)
+                BMI     chl_fin
+                LDA     <CL_ACC                 ; 桁方向が長い: e >= T なら行を送る
+                CMPA    <CL_T                   ; 行方向が長い: e <= -T なら桁を進める
+                BGT     chl_ystep
+                BLT     chl_xstep
+                TST     <CL_MAJ                 ; 等しいとき: 桁方向が長ければ行を送る
+                BNE     chl_ystep
+chl_xstep:
+                ADDA    <CL_DY                  ; 桁を進める (e += dy)
                 STA     <CL_ACC
-chlx_loop:
-                BSR     cl_plot
-                LDA     <CL_N
-                BEQ     chl_fin
-                DEC     <CL_N
-                LDA     <CB_DCOL                ; 桁を前進
+                LDA     <CB_DCOL
                 ADDA    <CL_SX
                 STA     <CB_DCOL
-                LDA     <CL_ACC                 ; 蓄積 -= dy、借りで行を前進
-                SUBA    <CL_DY
-                BCC     chlx_acc
-                ADDA    <CL_DX
-                LDB     <CB_DROW
-                ADDB    <CL_SY
-                STB     <CB_DROW
-chlx_acc:
+                TST     <CL_MAJ                 ; 45 度 (CL_MAJ = 1) は続けて行も送る
+                BGT     chl_yadv
+                BRA     chl_loop
+chl_ystep:
+                SUBA    <CL_DX                  ; 行を送る (e -= dx)
                 STA     <CL_ACC
-                BRA     chlx_loop
-chl_ymaj:
-                ; --- 行主軸: dy ステップ + dx 蓄積 ---
-                LDA     <CL_DY
-                STA     <CL_N
-                LSRA
-                STA     <CL_ACC
-chly_loop:
-                BSR     cl_plot
-                LDA     <CL_N
-                BEQ     chl_fin
-                DEC     <CL_N
-                LDA     <CB_DROW                ; 行を前進
+chl_yadv:
+                LDA     <CB_DROW
                 ADDA    <CL_SY
                 STA     <CB_DROW
-                LDA     <CL_ACC                 ; 蓄積 -= dx、借りで桁を前進
-                SUBA    <CL_DX
-                BCC     chly_acc
-                ADDA    <CL_DY
-                LDB     <CB_DCOL
-                ADDB    <CL_SX
-                STB     <CB_DCOL
-chly_acc:
-                STA     <CL_ACC
-                BRA     chly_loop
+                BRA     chl_loop
+
+;--- cl_plot — CB_DCOL/CB_DROW セルへ CL_CHR を属性 CL_ATR で打つ -------------
+;   既存セル属性の bit7 (F = フィールドの先頭) は保つ。
+cl_plot:
+                LDA     <CB_DROW
+                LDB     <WK_SCREEN_W
+                MUL                             ; D = 行 * 画面幅
+                ADDB    <CB_DCOL
+                BSR     cb_mkx          ; X = 文字バッファアドレス
+                LDB     CONBUF_ATTR-CONBUF_CHAR,X
+                ANDB    #$80                    ; 旧属性の F のみ保存
+                ORB     <CL_ATR                 ; B = 合成属性
+                LDA     <CL_CHR
+                JMP     cb_drawcell             ; セル描画 + conbuf 記録 (RTS 継承)
 
 ;--- fld_start_cur — U = カーソルを含むフィールドの先頭。A,B,X 破壊 --------------
 ;   後ろへ F=1 のセルを探す。無ければモード画面の先頭 (非保護フィールド、参考書籍)。
@@ -2425,20 +2331,6 @@ at_fld_start:
                 PSHS    U
                 CMPX    ,S++
                 RTS
-
-;--- cl_plot — CB_DCOL/CB_DROW セルへ CL_CHR を属性 CL_ATR で打つ -------------
-;   既存セル属性の bit7 (F = フィールドの先頭) は保つ。
-cl_plot:
-                LDA     <CB_DROW
-                LDB     <WK_SCREEN_W
-                MUL                             ; D = 行 * 画面幅
-                ADDB    <CB_DCOL
-                BSR     cb_mkx          ; X = 文字バッファアドレス
-                LDB     CONBUF_ATTR-CONBUF_CHAR,X
-                ANDB    #$80                    ; 旧属性の F のみ保存
-                ORB     <CL_ATR                 ; B = 合成属性
-                LDA     <CL_CHR
-                JMP     cb_drawcell             ; セル描画 + conbuf 記録 (RTS 継承)
 
 ;--- el_body — カーソルからフィールドの終りまで Null にして描き直す (EL、参考書籍) --
 ;   コンソールバッファはフィールドの終りまで Null にする。画面の描き直しは、
@@ -2593,7 +2485,8 @@ dc_dbl_loop:
                 BNE     dc_dbl_loop
                 BRA     dc_end
 ;--- dc_put3: A=パターン, X=B面アドレス。WK_CELL_COL bit0=B/1=R/2=G に従い ---
-;   立っているプレーンに A を、立っていないプレーンに 0 を書く。A,B,X 保存。
+;   立っているプレーンに A を、立っていないプレーンに 0 を書く。B,X 保存 (A も保つが、
+;   反転属性では反転した値で戻る)。
 ;   色はセルのアトリビュート (グラフィック描画色 WK_COLOR から独立)。
 ;   アトリビュートの bit3 = R (参考書籍) が 1 のセルは文字の色を反転して表示する。
 ;   字形のビットを反転させてから同じ経路へ流すので、字形の部分が
@@ -2656,12 +2549,12 @@ dc_end:
         ENDC
 
 ;--- cell_vaddr — カーソル位置の文字セル先頭 VRAM アドレスを X に返す --------------
-;   X = 行 × 行バイト (640/800) + 桁オフセット (40 桁は倍幅なので桁 × 2)。
+;   X = 行 × 行バイト (640/800。Type-B の位置は 320) + 桁オフセット (40 桁は倍幅なので桁 × 2)。
 ;   字形描画 (draw_char_at_cursor) と反転 (cursor_toggle) が共用する。
 ;   A,B 破壊。
 cell_vaddr:
                 LDA     <WK_CURSOR_Y
-                JSR     su_ofs                  ; D = 行 × 行バイト (640/800)
+                JSR     su_ofs                  ; D = 行 × 行バイト
                 TFR     D,X                     ; 行方向オフセット
                 LDB     <WK_CURSOR_X             ; 桁オフセット
                 TST     <WK_CHAR_DBL
@@ -2674,16 +2567,13 @@ cva_col:
 ;------------------------------------------------------------------------------
 ; dc_pad10 — 10px 行 (20 行モード) の文字セル下端 2 ラインを消す
 ;
-;   文字を書く操作は「セルを塗り替える」= セルの中に前の描画を残さない、が
-;   参考書籍どおりの見え方である。字形は 8 ライン ぶんしかないので、行ピッチが
-;   10px のときはセル下端の 2 ラインが書かれないまま残り、そこに前の描画
-;   (図形や以前の文字) が居座ってしまう。ここでその 2 ラインを 0 で消す。
+;   10 ライン行では字形の下端 2 ラインを消す (反転属性では文字色で埋まる)。
 ;   8px 行 (25 行モード) はセル = 字形と同じ高さなので何もしない。
 ;
 ;   入力: X = セル先頭 + 8 ライン (= 消す 2 ラインの先頭)。VRAM ゲートは
 ;         呼出元が開いたまま。A,B,X 破壊 (呼出元が復元する)。
-;   dc_put3 に A=0 を渡すと、色ビットの立っていないプレーンは元から 0 を書き、
-;   立っているプレーンにも 0 (=A) を書くので 3 プレーンとも消える。
+;   反転属性でなければ、dc_put3 に A=0 を渡すと、色ビットの立っていないプレーンは元から
+;   0 を書き、立っているプレーンにも 0 (=A) を書くので 3 プレーンとも消える。
 ;------------------------------------------------------------------------------
         IFNDEF SUBSYS_TB
 dc_pad10:
@@ -2744,13 +2634,7 @@ ck_l1:
 
 ;--- g4_blink — キー待ちの間のカーソルの点滅 (g4_wait から来て g4_wait へ戻る) --------
 ;   キー待ちの間、0.4 秒ごとに反転を入れ替える。
-;   点滅はキー待ちの繰り返しの中だけで行う。周期処理 (20 ms) が進める時刻カウンタの
-;   最下位桁 ($D00F) が変わるたびに X を 1 減らし、20 回でセルの反転を入れ替える。
-;   VRAM のアクセスの開閉 ($D409) を割り込みの中で行わないので、割り込まれた側
-;   (描画の途中や、転送された処理) の開閉の状態に触れない。キー待ちの外では点滅しない。
-;   反転は cursor_toggle (XOR) なので、控え WK_CURSOR_ON も一緒に入れ替える
-;   (この後の cursor_hide が「いま反転が掛かっているか」を正しく読める)。
-;   入れ替えの途中で取り消しが入ると反転と控えが食い違うので、その間だけ IRQ を止める。
+;   周期処理の最下位桁が変わるたびに X を 1 減らし、20 回でセルの反転を入れ替える。
 g4_blink:
                 LDA     <TM_CLK+3
                 CMPA    <WK_BLINK
@@ -2769,21 +2653,48 @@ g4_blret:
 
 ;------------------------------------------------------------------------------
 ; nmi_subwork — 周期 NMI のタイマ処理 (参考書籍)。
-;   時刻カウンタ + アラーム一致判定 + インターバルタイマのダウンカウントと
-;   リロード + 状態バイトの合成を行う。
-;   DP=$D0 は呼出元 (hdlr_NMI / timer_complete) が確立済み。
-;   NMI ($D00A ガード) と Set/Read Timer 完了 (timer_complete) の両方から呼ばれる。
+;   インターバルタイマのダウンカウントとリロード + 時刻カウンタ + 予約時刻の
+;   照合 + 状態バイトの合成を、この順に行う。
+;   DP=$D0 は呼出元 (hdlr_NMI / main_loop) が確立済み。
+;   NMI (TM_GUARD で見送る) と、見送った分を反映する main_loop の両方から呼ばれる。
 ;------------------------------------------------------------------------------
 nmi_subwork:
-                ; --- 時刻カウンタ $D00C-$D00F を 1 ティック進める ---
+                CLRA                            ; A = 事象のビット (OR で集める)
+nsw_itimer:
+                ; --- インターバルカウンタ (TM_T2、32 ビット) を 1 減じる ---
+                LDX     <TM_T2+2        ; 下位 16 ビット
+                BNE     nsw_itdec
+                LDU     <TM_T2          ; 下位が 0 → 上位から 1 借りる
+                LEAU    -1,U
+                STU     <TM_T2
+nsw_itdec:
+                LEAX    -1,X
+                STX     <TM_T2+2
+                BNE     nsw_clock               ; 下位が残っていれば継続
+                LDX     <TM_T2
+                BNE     nsw_clock               ; 上位が残っていれば継続
+                ; --- 満了: 許可のときは事象 $20。1 回限りの指定なら以後の許可を落とす ---
+                LDB     <TM_TC
+                LSRB
+                LSRB                            ; TC の bit1 = インターバルの許可
+                BCC     nsw_reload
+                ORA     #$20
+                LSRB                            ; TC の bit2 = 1 回限り
+                BCC     nsw_reload
+                LDB     <TM_TC
+                ANDB    #$FD                    ; 許可を落とす
+                STB     <TM_TC
+nsw_reload:
+                LDX     <TM_T2D         ; 再設定値 (TM_T2D) から積み直す
+                STX     <TM_T2
+                LDX     <TM_T2D+2
+                STX     <TM_T2+2
+nsw_clock:
+                ; --- 時刻カウンタ TM_CLK (4 桁) を 1 ティック進める ---
                 ;   桁ごとの上限は nmi_climits (フレーム 50 / 秒 60 / 分 60 / 時 24)。
-                ;   ティックの大半は最下位桁が上限に届かずそこで終わる。この通常経路
-                ;     だけを直接アドレッシングで畳み、桁送りが要る 50 ティックに 1 回
-                ;     だけ表参照のループへ落とす (周期処理の所要時間を詰めるため)。
-                LDY     #$0000                  ; Y = 通知要因の蓄積器
                 INC     <TM_CLK+3       ; 最下位桁 (フレーム) を +1
-                LDA     <TM_CLK+3
-                CMPA    #$32                    ; 最下位桁の上限 (= nmi_climits 先頭値)
+                LDB     <TM_CLK+3
+                CMPB    #$32                    ; 最下位桁の上限 (= nmi_climits 先頭値)
                 BCS     nsw_alarm               ; 未達 → 桁送りなし (通常はここで抜ける)
                 ; --- 桁送り: 満杯の桁を 0 に戻しながら上位へ送る ---
                 LDX     #TM_CLK+3       ; X = いま満杯になった桁
@@ -2798,79 +2709,56 @@ nsw_rtcloop:
                 BLS     nsw_rtcloop
                 BRA     nsw_alarm
 nsw_almatch:
-                LEAY    $10,Y                   ; アラーム一致 (要因 $10) — 通常経路の外に置き、一致時だけ戻る
-                BRA     nsw_itimer
+                ORA     #$10                    ; 予約時刻と一致 (事象 $10)
+                BRA     nsw_status
 nsw_evsnd:
-                ; --- 全桁送り (0 時) の通知要因: $D00B bit3 が許可のときだけ $40 ---
-                LDB     <TM_TC          ; TC = 通知許可
+                ; --- 全桁送り (0 時): TC の bit3 が許可のときだけ事象 $40 ---
+                LDB     <TM_TC
                 BITB    #$08
                 BEQ     nsw_alarm
-                LEAY    $40,Y
+                ORA     #$40
 nsw_alarm:
-                ; --- 一致通知: 時刻 4 バイトが $D010-$D013 と揃ったとき $10 ---
+                ; --- 時刻 4 バイトが予約時刻 (TM_T1I) と揃ったとき事象 $10 ---
                 LDB     <TM_TC
-                BITB    #$01
-                BEQ     nsw_itimer
-                LDD     <TM_CLK         ; 時:分
-                SUBD    <TM_T1I         ; 予約時刻の時:分との差
-                BNE     nsw_itimer
-                LDD     <TM_CLK+2       ; 秒:フレーム
-                SUBD    <TM_T1I+2       ; 予約時刻の秒:フレームとの差
-                BEQ     nsw_almatch             ; 一致 → 要因 $10 を立てて戻る
-nsw_itimer:
-                ; --- インターバルタイマ $D014:$D016 (上位:下位の 32bit) を 1 減じる ---
-                LDD     <TM_T2+2        ; 下位 16bit
-                BNE     nsw_itdec               ; 0 でなければ上位からの借りは不要
-                LDX     <TM_T2          ; 下位が 0 → 上位から 1 借りる
-                LEAX    -1,X
-                STX     <TM_T2
-nsw_itdec:
-                SUBD    #$0001
-                STD     <TM_T2+2
-                BNE     nsw_status              ; 下位が残っていれば継続
-                LDD     <TM_T2
-                BNE     nsw_status              ; 上位が残っていれば継続
-                ; --- 満了: 再設定値 $D018:$D01A から積み直し、許可時は通知要因 $20 ---
-                LDD     <TM_T2D+2       ; 再設定値の下位
-                STD     <TM_T2+2
-                LDD     <TM_T2D         ; 再設定値の上位
-                STD     <TM_T2
-                LDB     <TM_TC
-                BITB    #$02
-                BEQ     nsw_status
-                LEAY    $20,Y
-                BITB    #$04                    ; 1 回限りの指定なら以後の通知許可を落とす
-                BEQ     nsw_status
-                EORB    #$02
-                STB     <TM_TC
+                LSRB                            ; TC の bit0 = 予約時刻の許可
+                BCC     nsw_status
+                PSHS    A                       ; 事象を控える
+                LDD     <TM_CLK+2               ; 4 バイトの違いを XOR で取り、OR で 1 つにまとめて 1 回だけ分ける
+                EORA    <TM_T1I+2
+                EORB    <TM_T1I+3
+                PSHS    D
+                LDD     <TM_CLK
+                EORA    <TM_T1I
+                EORB    <TM_T1I+1
+                ORA     ,S+
+                ORB     ,S+
+                PSHS    B
+                ORA     ,S+                     ; Z = 4 バイトとも同じ
+                PULS    A                       ; 事象 (CC は変わらない)
+                BEQ     nsw_almatch
 nsw_status:
-                LEAY    ,Y              ; Y = 事象のビット
+                TSTA
                 BEQ     nspub_ret       ; 事象なし (通常はこちら)
-                LDX     ,S              ; 呼出し元: SET / READ TIMER の完了 (命令の実行中) なら
+                LDX     ,S              ; 呼出し元: main_loop (見送った分の反映) なら
                 CMPX    #nmi_ret        ;   そのまま通知する
                 BNE     nsw_publish2
-                LDA     12,S            ; 周期 NMI: 割り込まれた場所 (戻りアドレスの上に積まれた PC の
-                CMPA    #reset_entry/256        ;   上位) が ROM の中のときだけ通知する (転送された処理が
+                LDB     12,S            ; 周期 NMI: 割り込まれた場所 (戻りアドレスの上に積まれた PC の
+                CMPB    #reset_entry/256        ;   上位) が ROM の中のときだけ通知する (転送された処理が
                 BCS     nspub_ret               ;   走っている間は計時だけ)
                 ; ↓ nsw_publish2 へ落ちる (間は注釈だけ)
 
 ;------------------------------------------------------------------------------
 ; nsw_publish2 — タイマ機能の割込事象を共有 RAM の STATUS (相対 1) へ立てる
 ;   (参考書籍: bit4 TIMER / bit5 INTERVAL / bit6 0 時。
-;   各ビットを 1 にセットするだけで、0 にするのはメイン CPU)。Y = 事象のビット。
+;   各ビットを 1 にセットするだけで、0 にするのはメイン CPU)。A = 事象のビット。
 ;   続けて ATTENTION (参考書籍) をメイン CPU へ出す: サブ側の $D404 の読出し
 ;   (負パルス) がメイン CPU の FIRQ になる (参考書籍:
 ;   メイン側は $FD04 の bit0 で要因を見る)。
-;   呼ぶのは ROM の処理がサブ CPU を使っているときだけである。周期の割り込みとキーの
-;   割り込みは、$3F / $7F で転送された処理が走っている間にも入る。転送された処理は
-;   ワーク RAM を自分のコードやデータで上書きしてよく、共有 RAM とメイン CPU への
-;   割り込みも自分で使う。そこで割り込みの処理は、割り込まれた場所 (スタックに
-;   積まれた PC) が ROM の中であることを確かめてからここを呼ぶ。持ち主の印を
-;   ワーク RAM に置かないので、転送された処理の置き場に書くことが無い。
+;   ROM 内で割り込まれたときだけ通知する。
 ; nspub_put — B = STATUS に置く値。キーの FIRQ (PF キーの割込みの通知) と共用。
 ;------------------------------------------------------------------------------
 nsw_publish2:
-                TFR     Y,D
+                TFR     A,B
                 ORB     $D381
 nspub_put:
                 STB     $D381
@@ -2879,8 +2767,7 @@ nspub_ret:
                 RTS
 
 ;--- c0a_ext — $0A Get Buffer Address 本体 (カーソル座標応答) -------------------
-;   行はスクロール範囲相対で返す (メイン側は $12 と対で範囲相対座標系を往復する)。
-;   cmd_0a_getbufadr から JMP。
+;   $D383 = カーソル列 (X), $D384 = カーソル行 (Y)。行は絶対行で返す。
 c0a_ext:
                 ; 参考書籍の Y は 0〜24 のキャラクタ座標 = 画面の絶対行で
                 ; ある (スクロール範囲の上端を 0 と数えるものではない)。
@@ -2891,11 +2778,7 @@ c0a_ext:
 ;------------------------------------------------------------------------------
 ; kb_enqueue — B のキーコードをリングバッファへ 1 byte 格納
 ;   満杯 (count>=32) なら破棄。A,X 保存、U 破壊。
-;   満杯は「容量から個数を引いた空き数」で見る (引き算の符号で、個数が容量を
-;   越えてしまっている場合もまとめて弾ける)。
-;   折返しは下位バイトだけで済ませる。バッファは 32 byte で、先頭 KB_BUF_LO が
-;   その 32 の境界に載っているので、下位バイトを +1 して 5 ビットへ畳み、先頭値を
-;   重ねれば終端の次が先頭に戻る。上位バイトは常に変わらないので触らない。
+;   満杯は容量から個数を引いた空き数で見る。折返しは下位バイトだけで行う (32 byte 境界)。
 ;------------------------------------------------------------------------------
 kb_enqueue:
                 PSHS    A                       ; 呼出元の A を退避 (以降 A は作業用)
@@ -2946,12 +2829,9 @@ fr_key:
                 BHI     fr_done
                 INCB
                 TFR     B,A                     ; A = PF キー番号
-                LDX     #KB_PF_BASE
+                LDX     #fr_pfslot-2
                 ASLB
-                ASLB
-                ASLB
-                ASLB
-                ABX                     ; X = 定義テーブルの枠 (番号 × 16)
+                LDX     B,X             ; X = 定義テーブルの枠 (番号ごとの位置の表から)
                 LDB     ,X+             ; +0 = bit7 割込み制御フラグ / bit0-3 文字数
                 BMI     fr_pf_int       ;   (参考書籍)
                 ANDB    #$0F
@@ -2983,8 +2863,7 @@ fr_pf_int:                                      ; A = PF キー番号 (1〜10)
         IFNDEF SUBSYS_TB                        ; Type-B の位置の $1E は tb1e_entry
 ;--- pb2_fast — $1E 矩形書込み 2 高速経路 --------------------------------------
 pb2_fast:
-                CLR     <PBF_INV                ; 既定はパターン反転なし ($1C fn5 の
-                                                ;   残骸が FIFO 供給点に効かないよう消す)
+                CLR     <PBF_INV                ; 既定はパターン反転なし
                 LDA     9,U                     ; 相対 12 = ファンクションコードを
                 STA     <WK_PB_FN                ;   1 度だけ確定 (全 $1E 経路が参照)
                 CMPA    #5                      ; 参考書籍の NOT = 出力ビットパターン
@@ -3034,15 +2913,15 @@ pb_passinit:
 
         ENDC
 ;==============================================================================
-; $1C/$1E 矩形書込み 高速化 — バイト単位ブリット (ROM 末尾空き領域)
+; $1C/$1E 矩形書込み 高速化 — バイト単位ブリット
 ;
 ;   汎用形 (フォールバック) は pbb1_entry / pbb2_entry (任意幅ビット連続ブリット)。
-;   cmd_1c/cmd_1e の JMP 先は本ルーチンで、適用条件を満たさない形は汎用経路へ落ちる。
+;   表の入口は pb1_fast / pb2_fast で、適用条件を満たさない形は汎用経路へ渡す。
 ;
 ;   高速経路の適用条件 (満たさない場合は汎用経路へ JMP):
 ;     X0<=X1<=639, Y0<=Y1<=199, 幅 (X1-X0+1) が 8 の倍数、計数 ($D38D) が必要量
 ;     以上、かつパターン読出が共有 RAM ($D38E-$D3FF) 内で完結すること
-;     ($1C: h*C<=113 / $1E: 3*h*C<=計数<=113。C=幅/8, h=行数)。
+;     ($1C: h*C<=113 / $1E: 3*h*C<=111 かつ 3*h*C<=計数。C=幅/8, h=行数)。
 ;
 ;   動作観察のパターン詰め規則:
 ;     - パターンは行末でバイト境界へ切上げないビット連続詰め。幅が 8 の倍数の
@@ -3054,9 +2933,7 @@ pb_passinit:
 ;==============================================================================
 
 ; ---- PutBlock 高速経路の固定ワークエリア ----
-;   作業域はスタックフレーム (LEAS -28,S) ではなく固定 RAM に置く。描画中の
-;   スタックを浅く保つため (コマンドは直列実行で再入なし)。
-;   配置は $D0C6-$D0E1 (直接ページ $D0 の空き。参照を直接アドレスで書ける)。
+;   作業域は $D0C6-$D0E1 の固定 RAM。
 PBF_BASE        EQU     $D0C6
 PBF_PHASE       EQU     PBF_BASE+0      ; 1: X0 & 7
 PBF_LMASK       EQU     PBF_BASE+1      ; 1: 左端バイトマスク
@@ -3146,7 +3023,7 @@ pbb2_pass:
                 BLS     pbb2_pass
         ENDC
 
-;--- pbf_finish — 共通終端: gate OFF + 観測可能ワークの終端値を既存経路と一致 --
+;--- pbf_finish — 共通終端: gate OFF ---
 pbf_finish:
                 STA     IO_VRAM_GATE            ; VRAM gate OFF
                 RTS
@@ -3196,7 +3073,7 @@ pbb1_entry:
                 CLR     <PBF_PMASK              ; $1C モード
                 LDA     IO_VRAM_GATE            ; VRAM gate ON (ブロックで 1 回)
                 BSR     pbb_rowloop             ; ビットは FIFO が行を跨いで持ち越す
-                BRA     pbf_finish              ; gate OFF + 終端状態 + 正常応答
+                BRA     pbf_finish              ; gate OFF
 
 ;--- pbb_setup2 — 共通セットアップ (pbf_setup 流用 + FIFO 初期化) --------------
 pbb_setup2:
@@ -3270,7 +3147,7 @@ pbd_rej:
         IFDEF SUBSYS_AV
         IFNDEF SUBSYS_TB
 ;--- pt_match (Type-A の位置) — 行オフセット+PT_BC の 1byte を全色照合 (8px 同時) ---
-;   出力 A = ヒットビットマップ (PT_MODE 適用済)、CC.Z = 全 0。U 破壊。
+;   出力 A = ヒットビットマップ (PT_MODE 適用済)、CC.Z = 全 0。B,U 破壊。
 ;   ALU の比較 ($D410 = $87) を使う。比較データ ($D413-$D41A) には paint_entry が
 ;   照合する色を置いてある。VRAM を読むと $D413 の読みに 8 画素ぶんの一致が出る。
 pt_match:
@@ -3360,77 +3237,66 @@ ptm_e:
 ;--- pt_match — 行オフセット+PT_BC の 1byte を全色照合 (8px 同時) ---------------
 ;   出力 A = ヒットビットマップ (PT_MODE 適用済: $00=境界ビット/$FF=塗れるビット)、
 ;   CC.Z = 全 0。B,X,U 破壊。VRAM gate は読出で開く (終了時 pt_exit で閉じる)。
+;   3 面のバイトを、読んだままの値と反転した値の 2 通りで直接ページへ控える。色リストは
+;   1 色につき面ごとのポインタ 3 個で、その色のビットが 1 の面は読んだままの値、0 の面は
+;   反転した値を指す。3 個の AND が「その色に一致する画素」、全色の OR がヒットビットマップ。
 pt_match:
-                LDD     <PT_RO
-                ADDB    <PT_BC
-                ADCA    #0
-                TFR     D,U                     ; U = 行内バイトの VRAM アドレス (B 面)
+                LDU     <PT_RO
+                LDB     <PT_BC
+                LEAU    B,U                     ; U = 行内バイトの VRAM アドレス (B 面)
                 LDA     >IO_VRAM_GATE           ; VRAM gate ON (読出で開く)
-                ; 3 面のバイトは色を替えても同じものを読み直すだけなので、色ごとの
-                ; 繰り返しの外で 1 度だけ取り出して直接ページへ控える。繰り返しの中は
-                ; 16bit 変位付き指標参照 2 回が直接ページ参照 2 回に変わる。
                 LDA     ,U                      ; B 面
                 STA     <PT_PB
+                COMA
+                STA     <PT_NB
                 LDA     $4000,U                 ; R 面
                 STA     <PT_PR
+                COMA
+                STA     <PT_NR
                 LDA     $8000,U                 ; G 面
                 STA     <PT_PG
-                CLR     <PT_HIT
+                COMA
+                STA     <PT_NG
                 LDX     #PT_CLIST
                 LDB     <PT_NCOL
+                LDA     [,X++]                  ; 1 色目 (塗色)
+                ANDA    [,X++]
+                ANDA    [,X++]
+                BRA     pt_mc2
 pt_mc:
-                LDA     <PT_PB                  ; B 面
-                EORA    ,X+
-                STA     <PT_T
-                LDA     <PT_PR                  ; R 面
-                EORA    ,X+
-                ORA     <PT_T
-                STA     <PT_T
-                LDA     <PT_PG                  ; G 面
-                EORA    ,X+
-                ORA     <PT_T
-                COMA                            ; 8px ぶんの「この色に一致」ビット
+                STA     <PT_HIT                 ; ここまでの色の一致
+                LDA     [,X++]
+                ANDA    [,X++]
+                ANDA    [,X++]
                 ORA     <PT_HIT
-                STA     <PT_HIT
+pt_mc2:
                 DECB
                 BNE     pt_mc
-                LDA     <PT_HIT
                 EORA    <PT_MODE                ; 境界 / 塗れる の選択 (Z=全 0)
                 RTS
+;--- pt_ptab — 面ごとの控えの位置 (直接ページ $D0 の変位): 反転した値、読んだままの値 ---
+pt_ptab:
+                FCB     PT_NB,PT_PB             ; B 面
+                FCB     PT_NR,PT_PR             ; R 面
+                FCB     PT_NG,PT_PG             ; G 面
         ENDC
-;--- pt_scan_rf / pt_scan_lf — 塗れる点探索 (右/左) ----------------------------
-pt_scan_rf:
-        IFDEF SUBSYS_AV
-                LDX     >PT_DLR                 ; DIR=+1 / リミット列 = 描画範囲の右の縁の列 + 1
-                BRA     pt_sf
-        ELSE
-                LDX     #$0100+PT_COLS          ; DIR=+1 / リミット列=1 行のバイト数。行端まで走査
-                STX     <PT_DIR                 ;   (行端まで走査しても、ヒット有無の判定は
-                LDX     #PT_COLS*256+$FF        ;   呼出側比較でリミット列の打ち切りと等価)
-                STX     <PT_LIM                 ; リミット列 / MODE=$FF (塗れる点)
+;--- pt_scan_rx — 塗れる点探索 (右)。D=開始 X → D=最初の塗れる点の X ---------------
+;   下ろした記録の右端を含むバイト列までで打ち切る (PT_RLW は pt_pop が置く)。そこまでに
+;   無いときは、右端より大きい X を返す。
+pt_scan_rx:
+                LDX     <PT_RLW                 ; DIR=+1 / リミット列 = 右端のバイト列 + 1
+                STX     <PT_DIR
+                LDX     <PT_RLW+1               ; リミット列 / MODE=$FF (塗れる点)
+                STX     <PT_LIM
                 BRA     pt_scan
-        ENDC
 pt_sfd:
-                PSHS    B                       ; X = 列*8 + ビット内画素
+                PSHS    B                       ; D = 列*8 + ビット内画素
                 LDA     <PT_BC
                 LDB     #8
                 MUL
                 ADDB    ,S+
                 ADCA    #0
                 RTS
-pt_scan_lf:
-        IFDEF SUBSYS_AV
-                LDX     >PT_DLL                 ; DIR=-1 / リミット列 = 描画範囲の左の縁の列 - 1
-pt_sf:
-                STX     <PT_DIR
-                CLR     <PT_MODE
-                DEC     <PT_MODE                ; MODE=$FF (塗れる点)
-        ELSE
-                LDX     #$FFFF                  ; DIR=-1 / リミット列=-1
-                STX     <PT_DIR
-                STX     <PT_LIM                 ; リミット列=-1 / MODE=$FF
-        ENDC
-                ; fallthrough pt_scan
 ;--- pt_scan — 走査共通部。D=開始 X → D=最初のヒット X --------------------------
 ;   開始バイトはヒットビットマップを開始位置でマスクし、以後はバイト単位で
 ;   丸ごと照合 (8px/回)。リミット列到達で画面幅 PT_W (右) / -1 (左) を返す (SUBSYS_AV の
@@ -3438,7 +3304,7 @@ pt_sf:
 pt_scan:
         IFDEF SUBSYS_AV
                 CMPD    <WK_VIEW_X0             ; 描画範囲の外は縁の外側の X を返す
-                BLT     pt_srm
+                LBLT    pt_srm
                 CMPD    <WK_VIEW_X1
                 BGT     pt_soob
         ELSE
@@ -3456,13 +3322,25 @@ pt_scan:
         ELSE
                 BSR     pt_match
         ENDC
-                PULS    B
-                LDX     #pbf_tbl_r              ; 左: 開始位置以左のビットのみ
+                PULS    B                       ; B = 開始ビット位置 (0〜7)
+                PSHS    A                       ; 一致のビットマップ
+                LDA     #$FF                    ; 開始の画素より手前を消すマスクを送りで作る
                 TST     <PT_DIR
-                BMI     pt_sml
-                SUBB    #pbf_tbl_r-pbf_tbl_l    ; 右: 開始位置以右のビットのみ (pbf_tbl_l)
+                BPL     pt_smr
+                NEGB                            ; 左: 上位 (開始 + 1) ビット = $FF を左へ (7 - 開始) 回
+                ADDB    #7
 pt_sml:
-                ANDA    B,X
+                DECB
+                BMI     pt_smd
+                ASLA
+                BRA     pt_sml
+pt_smr:
+                DECB                            ; 右: $FF を右へ 開始 回
+                BMI     pt_smd
+                LSRA
+                BRA     pt_smr
+pt_smd:
+                ANDA    ,S+
 pt_schk:
                 BNE     pt_sfound
 pt_sloop:
@@ -3478,10 +3356,25 @@ pt_sfound:
                 BMI     pt_sfl
                 CLRB                            ; 右: MSB から最初のヒット
 pt_sfr:
+                ; 左端の 1 のビットの位置 (0〜7) を、4 ビット・2 ビット・1 ビットの順に絞って求める
+                BITA    #$F0
+                BNE     pt_sr2
+                LDB     #4
                 ASLA
-                BCS     pt_sfd
+                ASLA
+                ASLA
+                ASLA
+pt_sr2:
+                BITA    #$C0
+                BNE     pt_sr1
+                ADDB    #2
+                ASLA
+                ASLA
+pt_sr1:
+                TSTA
+                BMI     pt_sfd
                 INCB
-                BRA     pt_sfr
+                BRA     pt_sfd
 pt_slim:
                 TST     <PT_DIR
                 BMI     pt_srm
@@ -3497,12 +3390,26 @@ pt_soob:
                 RTS
         ENDC
 pt_sfl:
-                LDB     #7                      ; 左: LSB から最初のヒット
-pt_sfl2:
+                ; 右端の 1 のビットの位置を同じ絞り方で求める (bit0 が 7)
+                LDB     #7
+                BITA    #$0F
+                BNE     pt_sl2
+                LDB     #3
                 LSRA
-                BCS     pt_sfd
+                LSRA
+                LSRA
+                LSRA
+pt_sl2:
+                BITA    #$03
+                BNE     pt_sl1
+                SUBB    #2
+                LSRA
+                LSRA
+pt_sl1:
+                BITA    #$01
+                LBNE    pt_sfd
                 DECB
-                BRA     pt_sfl2
+                LBRA    pt_sfd
 pt_srm:
         IFDEF SUBSYS_AV
                 LDD     <WK_VIEW_X0             ; 左: 描画範囲の左の縁 - 1
@@ -3513,10 +3420,11 @@ pt_srm:
                 RTS
 
 ;==============================================================================
-; PAINT スキャン原線 + バイト照合 (paint_entry 系から JSR。ROM 末尾空き領域)
+; PAINT のスキャンライン走査とバイト照合 (paint_entry 系から JSR)
 ;==============================================================================
 ;--- pt_scan_rb / pt_scan_lb — 境界探索 (右/左)。D=開始 X → D=境界 X ----------
-;   見つからない場合 右=画面幅 PT_W / 左=-1。
+;   見つからない場合 右=画面幅 PT_W / 左=-1 (SUBSYS_AV の組は描画範囲の右の縁 + 1 /
+;   左の縁 - 1)。
 pt_scan_rb:
         IFDEF SUBSYS_AV
                 LDX     >PT_DLR                 ; DIR=+1 / リミット列 = 描画範囲の右の縁の列 + 1
@@ -3533,34 +3441,39 @@ pt_scan_lb:
 pt_sb:
                 STX     <PT_DIR
                 CLR     <PT_MODE
-                BRA     pt_scan
+                JMP     pt_scan
 
 ;==============================================================================
-; paint_entry — cmd $18 PAINT 本体 (動作観察のスキャンライン・シードフィル)
-;   仕様根拠: 参考書籍の PAINT と、入口の受け渡しの動作観察。
+; paint_entry — cmd $18 PAINT 本体 (区間の記録を積む塗りつぶし)
 ;   パラメータ: $D383-4=X / $D385-6=Y / $D387=塗色 / $D388=境界色数 N (0-8) /
 ;               $D389〜=境界色リスト (N 個)
 ;   仕様:
 ;     1. 境界条件 = 「境界色 N 個 + 塗色」のいずれかへの 3 面完全一致
-;        (塗色は常に暗黙の境界。リストは N スロットへ塗色を前置して N+1 個)
+;        (塗色は常に暗黙の境界。照合する色は塗色と境界色 N 個の N+1 個)
 ;     2. 塗りは常に上書き。境界ピクセル自体は塗らない
 ;     3. シードが境界色/塗色上なら無動作
-;     4. N>8・座標範囲外はエラー条件 (描かず終了。応答は $15 と同方針の簡略化)
-;     5. 1px 境界の裏側 (張り出し) は方向反転 + 文脈 push で追跡し、
-;        凹形状・渦巻も完全充填する
-;     6. シードスタック満杯時は黙殺 (取り残しが出得る)
+;     4. N>8・座標範囲外は描かずにエラーで終わる
+;     5. 上下左右につながる塗れる点をすべて塗る
+;     6. 記録の置場が満杯のときは、その記録を積まずに進む (取り残しが出得る)。空きが 3 件
+;        以下になったら、いちばん古い記録を先に下ろして枠を空ける
 ;   実装方式:
-;     - 照合・走査はバイト単位 8px 同時 (3 面を EOR/OR/COM でビットマップ化)
-;     - スパン塗りは draw_line の水平バイトブリット (hline_blit) を流用
-;     - 変数は DP=$D0 の $D0A0-$D0BF (SYMBOL/$04 のスクラッチと重畳するが
-;       別コマンドで非同時。NMI は DP 退避復元済かつ当領域不使用)
-;     - シードスタック = $D263↓$D100 (4byte/個 88 個、空=SP==$D264、
-;       満杯=SP==$D100 で黙殺)
-;     - 展開色リスト = $D394〜 (共有 RAM。BUSY 中はメインが書かない)
+;     - 塗った区間 1 本ごとに「行・左端・右端・向き」の記録を積む。記録を 1 件
+;       下ろすたびに、その向きの隣の行を左端〜右端の範囲で調べ、塗れる区間を
+;       左右へ伸ばして塗り、同じ向きの記録を積む。元の区間より 2 画素以上はみ出した
+;       部分は、反対向きの記録として積む。同じ行に塗れる区間がまだ残るときは、
+;       下ろした記録の左端を進めて積み直す。記録が尽きたら終わり。
+;     - 照合・走査はバイト単位 8px 同時 (SUBSYS_AV の組は ALU の比較)
+;     - 区間の塗りは draw_line の水平バイトブリット (hline_blit) を流用 (SUBSYS_AV の組は
+;       ラインドロワ)
+;     変数は DP=$D0 の $D0A0-$D0BF (他コマンドと同時に走らない)
+;     記録の置場 = $D101-$D263 (5byte/件 71 件) を輪として使う。PT_SP = 次に下ろす記録、
+;       PT_FREE = 空きの件数 (71 = 空、0 = 満杯)。
+;       1 件 = 左端 (2 バイト。bit15 = 向き: 0 = Y-1 側 / 1 = Y+1 側)、右端 (2 バイト)、行
+;     - 展開色リスト = $D3A0〜$D3D5 (共有 RAM。BUSY 中はメインが書かない)
 ;==============================================================================
 ;   直接ページ $D0 の変位で書く。基点 PT_B は SYM_B (SYMBOL のスクラッチの基点) の下位
 ;   バイトで、Type-A / Type-B の位置 (SUBSYS_AV) では $25、Type-C の位置では $A0 (冒頭の
-;   WK_SYM_PTR の説明を参照)。PT_NO 以降の 7 byte ($B7-$BD) はどちらの位置でも同じ。
+;   WK_SYM_PTR の説明を参照)。$B7 以降はどちらの位置でも同じ。
 PT_B            EQU     SYM_B-$D000     ; 基点 (直接ページ $D0 の変位)
 PT_NCOL         EQU     PT_B+0  ; 1: 照合色数 (N+1)
 PT_T            EQU     PT_B+1  ; 1: 照合スクラッチ
@@ -3568,29 +3481,37 @@ PT_DIR          EQU     PT_B+2  ; 1: スキャン方向 (+1 / $FF)。PT_LIM と�
 PT_LIM          EQU     PT_B+3  ; 1: バイト列リミット (符号付き、-1..80)。PT_MODE と隣接
 PT_MODE         EQU     PT_B+4  ; 1: $00=境界探索 / $FF=塗れる点探索
 PT_HIT          EQU     PT_B+5  ; 1: ヒットビットマップ
-PT_PB           EQU     PT_B+6  ; 1: 照合中バイトの B 面 (色ごとの繰り返しの外で取得)
+PT_PB           EQU     PT_B+6  ; 1: 照合中バイトの B 面 (読んだままの値)
 PT_PR           EQU     PT_B+7  ; 1: 同 R 面
-PT_TX           EQU     PT_B+8  ; 2: テンポラリ X (張り出し境界等)
-PT_CY           EQU     PT_B+10 ; 2: 現処理行 Y (PT_TX と 2 ワード連続 = 種点の転記先)
-PT_RDIR         EQU     PT_B+12 ; 1: 行方向 ($00=Y-1 / $FF=Y+1。COM で反転)
-PT_RX           EQU     PT_B+13 ; 2: 現スパン右境界 X
-PT_PG           EQU     PT_B+15 ; 1: 照合中バイトの G 面 (色ごとの繰り返しの外で取得)
-PT_LX           EQU     PT_B+17 ; 2: 現スパン左境界 X
-PT_NY           EQU     PT_B+19 ; 2: 次行 Y
+PT_TX           EQU     PT_B+8  ; 2: 種点の X / 塗る区間の左端
+PT_CY           EQU     PT_B+10 ; 2: 調べる行 Y (PT_TX と 2 ワード連続 = 種点の転記先)
+PT_RDIR         EQU     PT_B+12 ; 1: 下ろした記録の向き ($00=Y-1 側 / $80=Y+1 側)
+PT_RX           EQU     PT_B+13 ; 2: 下ろした記録の右端 X
+PT_PG           EQU     PT_B+15 ; 1: 同 G 面
+PT_LX           EQU     PT_B+17 ; 2: 下ろした記録の左端 X
+PT_EX           EQU     PT_B+19 ; 2: 塗る区間の右端
 PT_RO           EQU     PT_B+21 ; 2: 現スキャン行オフセット (Y*80)
-PT_NO           EQU     $B7     ; 2: 次行オフセット
-PT_OO           EQU     $B9     ; 2: 現行オフセット (行送り中の戻り先)
+PT_RLW          EQU     $B7     ; 3: pt_scan_rx が置く値 (向き +1、限界の列、MODE の $FF)
+        IFNDEF SUBSYS_AV
+PT_NB           EQU     PT_B+1  ; 1: 照合中バイトの B 面を反転した値 (PT_T の位置。この組み立ては PT_T を使わない)
+PT_NR           EQU     PT_B+16 ; 1: 同 R 面
+PT_NG           EQU     $BA     ; 1: 同 G 面
+        ENDC
 PT_BC           EQU     $BB     ; 1: 走査バイト列 (X>>3、符号付き)
-PT_SP           EQU     $BC     ; 2: シードスタックポインタ
+PT_SP           EQU     $BC     ; 2: 記録の置場のポインタ (次に下ろす記録)
         IFDEF SUBSYS_AV
-PT_DLR          EQU     $D394   ; 2: 右向きの走査の向き (+1) と限界の列 (描画範囲の右の縁の列 + 1)。SUBSYS_AV
+PT_DLR          EQU     $D394   ; 2: 右向きの走査の向き (+1) と限界の列 (描画範囲の右の縁の列 + 1)。
 PT_DLL          EQU     $D396   ; 2: 左向きの走査の向き (-1) と限界の列 (左の縁の列 - 1)
 PT_LMASK        EQU     PT_B+7  ; 1: 左の縁のバイトのうち範囲の外の画素 (PT_PR の位置。SUBSYS_AV は PT_PR を使わない)
 PT_RMASK        EQU     PT_B+15 ; 1: 右の縁のバイトのうち範囲の外の画素 (PT_PG の位置。同上)
         ENDC
-PT_CLIST        EQU     $D394   ; 展開済み色リスト (最大 9 色 × 3byte)
-PT_STK_TOP      EQU     $D264   ; シードスタック上端 (空 = SP がここ)
-PT_STK_BOT      EQU     $D100   ; 同下端 (満杯 = SP がここ)
+PT_CLIST        EQU     $D3A0   ; 展開済み色リスト (最大 9 色 × 6byte)
+PT_STK_TOP      EQU     $D264   ; 記録の置場の上端 (ここまで来たら下端へ回る)
+PT_STK_BOT      EQU     $D101   ; 同下端 (ここまで来たら上端へ回る。上端との差は PT_REC の整数倍)
+PT_REC          EQU     5       ; 記録 1 件のバイト数
+PT_NREC         EQU     (PT_STK_TOP-PT_STK_BOT)/PT_REC  ; 置場の件数
+PT_NEAR         EQU     3       ; 空きがこの件数以下なら、いちばん古い記録を先に下ろす
+PT_FREE         EQU     $BE     ; 1: 置場の空きの件数
         IFDEF SUBSYS_TB
 PT_W            EQU     320     ; 画面幅 (FM77AV の 320×200 の画面)
 PT_COLS         EQU     40      ; 1 行のバイト数
@@ -3598,7 +3519,6 @@ PT_COLS         EQU     40      ; 1 行のバイト数
 PT_W            EQU     640     ; 画面幅
 PT_COLS         EQU     80      ; 1 行のバイト数
         ENDC
-
 paint_entry:
         IFDEF SUBSYS_AV
         IFNDEF SUBSYS_TB
@@ -3649,10 +3569,6 @@ ptt_set:
                 LBHI    gr_err_param
                 INCB
                 STB     <PT_NCOL                ; 照合する色の数 = 塗る色 + N
-                LDA     6,U                     ; 塗る色を N の位置へずらし、色を
-                STA     7,U                     ;   3 バイトずつ連ねる
-                LDD     4,U
-                STD     5,U
                 JSR     av_begin
                 LDX     #IO_ALU_CMP             ; 比較データ 0〜7 ($D413-$D41A) を
                 LDD     #$8008                  ;   使わない印 $80 に
@@ -3660,13 +3576,17 @@ pta_cd:
                 STA     ,X+
                 DECB
                 BNE     pta_cd
-                LEAX    5,U                     ; 色 (塗る色、境界色の順)
+                LEAX    4,U                     ; 色 (塗る色、続いて N を飛ばして境界色)
                 LDY     #AV_CL+4
                 LDB     <PT_NCOL
 pta_cl:
                 PSHS    B
                 JSR     av_col4                 ; 1 色 = 4 層の比較値 (Y の手前 4 バイト。Y はその先頭)
                 LEAX    3,X
+                CMPX    #SH_PARAM+7             ; 塗る色の次は N (相対 10) なので飛ばす
+                BNE     pta_cx
+                LEAX    1,X
+pta_cx:
                 PSHS    U
                 LDU     #AV_CL                  ; 前の色と同じなら照合しない (この枠は次の色で上書き)
 pta_dq:
@@ -3691,9 +3611,9 @@ pta_new:
                 PULS    B
                 DECB
                 BNE     pta_cl
-                LDD     >AV_CL                  ; 塗る色の 4 回ぶんの $D411 の値
-                STD     <AV_COL
+                LDX     >AV_CL                  ; 塗る色の 4 回ぶんの $D411 の値 (4 バイト) を AV_COL へ写す
                 LDD     >AV_CL+2
+                STX     <AV_COL
                 STD     <AV_COL+2
                 LDD     2,U                     ; 種点
                 STD     <PT_CY
@@ -3743,9 +3663,7 @@ ptw_1:
                 ANDA    #$07
                 RTS
         ELSE
-                ; 境界色の数を、直接ページを移す前に見る。移した後だとエラー応答の書込先が
-                ;   共有 RAM からずれる。N = 0〜8 を受け付け (0 は境界色なし)、9 以上は $45
-                ;   (STAGE_ALT_RAM は参考書籍の 1〜8 の外を $43)。
+                ; 境界色の数 N を先に検査する。N = 0〜8 を受け付ける。
                 LDB     5,U                     ; N = 境界色の数
         IFDEF STAGE_ALT_RAM
                 DECB                            ; 参考書籍の Nc は 1〜8
@@ -3757,240 +3675,68 @@ ptw_1:
                 LBHI    gr_err_param
         ENDC
                 LDD     4,U                     ; A=塗色, B=N
-                STA     5,U                     ; 塗色を N スロットへ前置 (N+1 個に)
-                INCB
+                INCB                            ; 照合する色の数 = 塗色 + N
                 STB     <PT_NCOL
                 ANDA    #$07
                 STA     <WK_COLOR                ; 塗色 = hline_blit の充填値
-                ; --- 色リスト展開: $D388〜 N+1 個 → $D394〜 (1 色 = 面別 $00/$FF×3) ---
-                LEAX    5,U
+                ; --- 色リスト展開: 塗色 ($D387)、続いて境界色 $D389〜 N 個 → $D3A0〜 (1 色 = 面ごとのポインタ 3 個) ---
+                ;   色のビットが 1 の面は読んだままの値の控え、0 の面は反転した値の控えを指す。
+                LEAX    4,U
                 LDU     #PT_CLIST
                 PSHS    B
 pt_exc:
-                LDA     #3                      ; 1 色 = 3 面ぶん
-                STA     <PT_T
+                LDY     #pt_ptab
 pt_exc2:
-                LSR     ,X                      ; bit0=B 面 → bit1=R 面 → bit2=G 面
-                RORB
-                SEX
-                STA     ,U+
-                DEC     <PT_T
+                LSR     ,X                      ; C = この面のビット (B 面 → R 面 → G 面)
+                LDA     #$D0                    ; 控えは直接ページ $D0
+                LDB     ,Y                      ; ビット 0: 反転した値
+                BCC     pt_exc3
+                LDB     1,Y                     ; ビット 1: 読んだままの値
+pt_exc3:
+                STD     ,U++
+                LEAY    2,Y
+                CMPY    #pt_ptab+6
                 BNE     pt_exc2
                 LEAX    1,X
+                CMPX    #SH_PARAM+5             ; 塗色の次は N (相対 8) なので飛ばす
+                BNE     pt_exc4
+                LEAX    1,X
+pt_exc4:
                 DEC     ,S
                 BNE     pt_exc
                 LEAS    1,S
                 ; --- 種点の範囲検査 (画面外の種点では何も塗らない) ---
-                ;   PT_TX (シード X) と PT_CY (処理行 Y) は 2 ワード (2 バイト) 連続に配置して
+                ;   PT_TX (シード X) と PT_CY (処理行 Y) は 2 ワード (4 バイト) 連続に配置して
                 ;   あるので、gr_xy の転記先としてそのまま渡せる。
                 LDX     #$D383
                 LDY     #$D000+PT_TX            ; DP=$D0 側の実アドレス
                 JSR     gr_xy
-                LBCC    pt_exit                 ; 画面外の種点 → 塗らない
+                LBCC    gr_err_coord            ; 画面外の種点 → 塗らずに座標の誤り
         ENDC
 pt_seed:
+                LDX     #PT_STK_TOP             ; 記録の置場は空
+                STX     <PT_SP
+                CLR     <PT_RDIR                ; 種点の行の区間は Y-1 側の向きで積む
+                LDD     #$FF00+PT_NREC
+                STA     <PT_RLW+2               ; pt_scan_rx が PT_MODE へ置く値 (塗れる点)
+                STB     <PT_FREE                ; 置場は空
                 LDA     <PT_CY+1                ; 行オフセット = Y × 1 行のバイト数
                 LDB     #PT_COLS
                 MUL
                 STD     <PT_RO
-                LDX     #PT_STK_TOP             ; シードスタック空
-                STX     <PT_SP
-                ; --- シード行の左右境界を確定 ---
                 LDD     <PT_TX
-        IFDEF SUBSYS_AV
-                JSR     pt_scan_rb
-        ELSE
-                BSR     pt_scan_rb
-        ENDC
-                STD     <PT_RX
-                LDD     <PT_TX
-        IFDEF SUBSYS_AV
-                JSR     pt_scan_lb
-        ELSE
-                BSR     pt_scan_lb
-        ENDC
+                JSR     pt_scan_lb              ; 種点から左の境界
+                CMPD    <PT_TX
+                BEQ     pt_exit                 ; 種点が境界の上 → 無動作
+                ADDD    #1                      ; 種点の行の区間の左端
+                ; 下ろした記録の区間を「左端 = この区間の左端、右端 = その 2 つ左」と置く。
+                ;   pt_run は右へはみ出した部分を反対向きに積むので、種点の行の区間は
+                ;   全体が Y-1 側と Y+1 側の両方の向きで積まれる。
                 STD     <PT_LX
-                CMPD    <PT_RX
-                LBEQ    pt_exit                 ; 左右一致 = シードが境界上 → 無動作
-                LDA     #$FF                    ; 反対方向 (Y+1 側) を type1 で予約
-                STA     <PT_RDIR
-                LDA     #1
-                JSR     pt_push
-                COM     <PT_RDIR                ; $00 = Y-1 側から処理開始
-                ; fallthrough pt_row_span
-
-;--- 行ループ (type0 再開点): 現行スパン [PT_LX+1..PT_RX-1] を塗る -------------
-pt_row_span:
-                LDA     <PT_CY+1                ; 行オフセット再計算
-                LDB     #PT_COLS
-                MUL
-                STD     <PT_RO
-                LDD     <PT_LX
-                ADDD    #1
-                JSR     pt_scan_rf              ; 行内で塗れる最初の点
-                CMPD    <PT_RX
-                LBCC    pt_pop                  ; なし → POP
-                TFR     D,X                     ; 左境界 = X-1 (D は塗り開始点のまま)
-                LEAX    -1,X
-                STX     <PT_LX
-                JSR     pt_fill                 ; [X..右境界-1] を塗る → D=右境界
-                CMPD    <PT_RX
-                BCC     pt_row_next                 ; スパンが右境界まで届いた → 行送り
-                STD     <PT_TX                  ; 内部障害物の右端
-                ADDD    #1
-                JSR     pt_scan_rf              ; 同じ行に残る塗れる区間
-                CMPD    <PT_RX
-                BCC     pt_f1
-                PSHS    A,B                     ; 残区間先頭 X
-                LDD     <PT_LX
-                PSHS    A,B                     ; 左境界退避
-                LDD     2,S
-                SUBD    #1
-                STD     <PT_LX
-                CLRA                            ; 残区間を type0 で予約
-                JSR     pt_push
-                PULS    A,B
-                STD     <PT_LX                  ; 左境界復帰
-                LEAS    2,S
-pt_f1:
-                LDD     <PT_TX
-                STD     <PT_RX                  ; 右リミットを障害物まで縮める
-                ; fallthrough pt_row_next
-
-;--- 行送り + 右張り出し (type1 再開点) ----------------------------------------
-pt_row_next:
-                JSR     pt_advance              ; 次行計算 (範囲外は呼出元破棄→POP)
-                LDD     <PT_RX
-                SUBD    #1
-                JSR     pt_scan_rb              ; 次行で右境界を探す
-                STD     <PT_TX
-                ADDD    #1
-                CMPD    <PT_RX                  ; 右境界-1 が既に境界か (右が閉じた)
-                BNE     pt_right_open
-                LDD     <PT_RX
                 SUBD    #2
-                JSR     pt_scan_lf              ; 次行スパン内を右から探す
-                CMPD    <PT_LX
-                BLT     pt_pop                  ; 塗れる点なし → POP
-                ADDD    #1
-                STD     <PT_RX                  ; 右境界を縮める
-                BRA    pt_left_edge
-pt_right_open:
-                LDD     <PT_OO                  ; --- 右が開いている: 現行へ一旦戻る ---
-                STD     <PT_RO
-                LDD     <PT_RX
-                ADDD    #1
-                JSR     pt_scan_rf              ; 現行で旧右境界の先に塗れる点?
-                CMPD    <PT_TX
-                BGE     pt_right_widen                 ; なし → リミット拡大のみ
-                STD     <PT_TX                  ; --- 右張り出し ---
-                JSR     pt_fill                 ; 現行の張り出し区間を塗る
                 STD     <PT_RX
-                LDA     #1                      ; いまの文脈を type1 で予約
-                JSR     pt_push
-                LDD     <PT_TX
-                SUBD    #1
-                STD     <PT_LX
-                COM     <PT_RDIR                ; 方向反転して回り込みを処理
-                BRA     pt_row_next
-pt_left_open:
-                LDD     <PT_OO                  ; --- 左が開いている: 現行へ ---
-                STD     <PT_RO
                 LDD     <PT_LX
-                SUBD    #1
-                JSR     pt_scan_lf              ; 現行で旧左境界の左に塗れる点?
-                CMPD    <PT_TX
-                BGT     pt_lov                  ; あり → 左張り出し
-                LDD     <PT_TX
-                STD     <PT_LX                  ; なし → 左リミット拡大
-                BRA     pt_commit
-pt_right_widen:
-                LDD     <PT_TX
-                STD     <PT_RX                  ; 右リミットを次行の境界まで拡大
-                ; fallthrough pt_left_edge
-
-;--- 左境界 + 左張り出し (type2 再開点) ----------------------------------------
-pt_left_edge:
-                JSR     pt_advance              ; 行オフセットを次行へ再計算
-                LDD     <PT_LX
-                ADDD    #1
-                JSR     pt_scan_lb              ; 次行で左境界を探す
-                STD     <PT_TX
-                SUBD    #1
-                CMPD    <PT_LX                  ; 左境界+1 が既に境界か (左が閉じた)
-                BNE     pt_left_open
-                LDD     <PT_LX
-                ADDD    #2
-                JSR     pt_scan_rf              ; 次行スパン内を左から探す
-                CMPD    <PT_RX
-                BGT    pt_pop                  ; 塗れる点なし → POP
-                SUBD    #1
-                STD     <PT_LX
-pt_commit:
-                LDD     <PT_NY                  ; 次行を現行としてコミット
-                STD     <PT_CY
-                LDD     <PT_LX
-                CMPD    <PT_RX
-                LBLT    pt_row_span                 ; スパンが残っている → 続行
-                ; fallthrough pt_pop
-
-;--- シード pop: 空なら PAINT 完了 ----------------------------------------------
-pt_pop:
-                LDX     <PT_SP
-                CMPX    #PT_STK_TOP
-                BEQ     pt_exit                 ; 空 = 完了
-                CLRB                            ; (CC を先に消費: 直後の BPL は LDA の N を見る)
-                LDA     ,X                      ; フラグ (bit7=方向標識)
-                BPL     pt_po1
-                COMA                            ; 方向 $FF: 全反転を戻す
-                COMB
-pt_po1:
-                STB     <PT_RDIR
-                TFR     A,B
-                ANDB    #$03                    ; 左境界 X 上位 2bit (3 は -1 に正規化)
-                CMPB    #$03
-                BNE     pt_po2
-                LDB     #$FF
-pt_po2:
-                STB     <PT_LX
-                LDB     2,X
-                STB     <PT_LX+1
-                LSRA
-                LSRA
-                TFR     A,B
-                ANDB    #$03                    ; 右境界 X 上位 2bit
-                STB     <PT_RX
-                LDB     1,X
-                STB     <PT_RX+1
-                CLR     <PT_CY
-                LDB     3,X
-                STB     <PT_CY+1
-                LEAX    4,X
-                STX     <PT_SP
-                LSRA
-                LSRA                            ; A = 再開タイプ (0/1/2)
-                ASLA
-                LDX     #pt_jtab
-                JMP     [A,X]
-pt_lov:
-                STD     <PT_TX                  ; --- 左張り出し ---
-                JSR     pt_scan_lb              ; 現行で張り出しの左境界
-                STD     <PT_LX
-                ADDD    #1                      ; [左境界+1 .. 張り出し右端] を塗る
-                STD     <WK_LN_X0
-                LDD     <PT_TX
-                JSR     pt_hln
-                LDA     #2                      ; いまの文脈を type2 で予約
-                BSR     pt_push
-                LDD     <PT_TX
-                ADDD    #1
-                STD     <PT_RX
-                COM     <PT_RDIR                ; 方向反転
-                LBRA    pt_row_next
-pt_jtab:
-                FDB     pt_row_span
-                FDB     pt_row_next
-                FDB     pt_left_edge
+                BRA     pt_run
 
 ;--- pt_exit — 完了/エラー共通出口 ----------------------------------------------
 ;   SUBSYS_AV の組み立てでは av_end ($D430 を控えの値に戻して ALU を止める) へ行く。
@@ -4002,71 +3748,164 @@ pt_exit:
                 RTS
         ENDC
 
-;--- pt_advance — 行送り: 次行 = 現行±1。0..199 外は呼出元を破棄して POP -------
-;   (呼出深度 1 段 (pt_row_next/pt_left_edge からの JSR) に依存。ラッパ厳禁)
-pt_advance:
-                LDD     <PT_CY
-                TST     <PT_RDIR
-                BNE     pt_adp
-                SUBD    #1
-                BRA     pt_adc
-pt_ado:
-                LEAS    2,S                     ; 呼出元を破棄
-                BRA     pt_pop
-pt_adp:
-                ADDD    #1
-pt_adc:
-        IFDEF SUBSYS_AV
-                CMPD    <WK_VIEW_Y0             ; 描画範囲の外の行へは進まない
-                BLT     pt_ado
-                CMPD    <WK_VIEW_Y1
-                BGT     pt_ado
-        ELSE
-                CMPD    #200                    ; 負は $FFFF で同時に弾く
-                BCC     pt_ado
-        ENDC
-                STD     <PT_NY
-                LDA     <PT_NY+1                ; 次行オフセット (現スキャン行に設定)
-                LDB     #PT_COLS
-                MUL
-                STD     <PT_NO
-                STD     <PT_RO
-                LDA     <PT_CY+1                ; 現行オフセット (戻り先)
-                LDB     #PT_COLS
-                MUL
-                STD     <PT_OO
-                RTS
-
-;--- pt_push — 現文脈 (左境界/右境界/行/方向) を 4byte パックで push -----------
-;   入力 A = 再開タイプ (0/1/2)。満杯時は黙殺。
-pt_push:
+;--- pt_pop — 記録を 1 件下ろし、その向きの隣の行を調べる。空なら PAINT 完了 ------
+pt_pop:
                 LDX     <PT_SP
-                CMPX    #PT_STK_BOT
-                BEQ     pt_puf
-                ASLA
-                ASLA                            ; タイプ << 2
-                LDB     <PT_RX
-                ANDB    #$03
-                PSHS    B
-                ORA     ,S+                     ; | 右境界上位 2bit
-                ASLA
-                ASLA
-                LDB     <PT_LX
-                ANDB    #$03
-                PSHS    B
-                ORA     ,S+                     ; | 左境界上位 2bit
-                EORA    <PT_RDIR                ; 方向 $FF は全反転 (bit7=標識)
-                LEAX    -4,X
-                STA     0,X
-                LDB     <PT_RX+1
-                STB     1,X
-                LDB     <PT_LX+1
-                STB     2,X
-                LDB     <PT_CY+1
-                STB     3,X
+                LDB     <PT_FREE
+                CMPB    #PT_NREC
+                BEQ     pt_exit                 ; 空 = 完了
+                CMPX    #PT_STK_TOP             ; 置場は輪: 上端まで来たら下端へ回る
+                BNE     pt_pp1
+                LDX     #PT_STK_BOT
+pt_pp1:
+                CMPB    #PT_NEAR
+                BHI     pt_pp2
+                JMP     pt_old                  ; 空きが少ない → いちばん古い記録を先に下ろす
+pt_pp2:
+                INC     <PT_FREE
+                LDD     ,X                      ; 左端 (bit15 = 向き)
+                ANDA    #$80
+                STA     <PT_RDIR
+                EORA    ,X                      ; 向きのビットを落とした左端
+                STD     <PT_LX
+                LDD     2,X
+                STD     <PT_RX
+                LSRA
+                RORB
+                LSRA
+                RORB
+                LSRA
+                RORB                            ; B = 右端のバイト列
+                INCB
+                LDA     #1
+                STD     <PT_RLW                 ; pt_scan_rx の向き (+1) と限界の列 (右端のバイト列 + 1)
+                LDB     4,X                     ; 記録の行
+                LEAX    PT_REC,X
                 STX     <PT_SP
-pt_puf:
+                TST     <PT_RDIR
+                BMI     pt_pdn
+                SUBB    #2
+pt_pdn:
+                INCB                            ; 調べる行 = 記録の行 - 1 / + 1
+        IFDEF SUBSYS_AV
+                CLRA
+                CMPD    <WK_VIEW_Y0             ; 描画範囲の外の行は調べない
+                BLT     pt_pop
+                CMPD    <WK_VIEW_Y1
+                BGT     pt_pop
+        ELSE
+                CMPB    #200                    ; 画面の外の行は調べない (-1 は $FF で同時に弾く)
+                BCC     pt_pop
+                CLRA
+        ENDC
+                STD     <PT_CY
+                LDA     #PT_COLS                ; 行オフセット = Y × 1 行のバイト数
+                MUL
+                STD     <PT_RO
+                LDD     <PT_LX
+                JSR     pt_scan_rx              ; 左端から右へ、最初の塗れる点
+                CMPD    <PT_RX
+                BGT     pt_pop                  ; 右端までに無い
+                CMPD    <PT_LX
+                BNE     pt_run                  ; 左端より右から始まる区間
+                JSR     pt_scan_lb              ; 左端が塗れる → 区間を左へ伸ばす
+                ADDD    #1
+                ; ↓ pt_run へ落ちる
+
+;--- pt_run — D を左端とする塗れる区間を塗り、記録を積む ---------------------------
+pt_run:
+                STD     <PT_TX                  ; 区間の左端
+                JSR     pt_scan_rb              ; 右の境界
+                SUBD    #1
+                STD     <PT_EX                  ; 区間の右端
+                ADDD    #2
+                CMPD    <PT_RX                  ; 境界の右に、調べる範囲が残るか
+                BGT     pt_draw
+                JSR     pt_scan_rx              ; 残りの範囲の最初の塗れる点
+                CMPD    <PT_RX
+                BGT     pt_draw
+                ; 同じ行に塗れる区間が残る: いま下ろした記録を、左端をその点の 1 つ左へ
+                ;   進めて積み直す (右端・行・向きは置場に残っている値のまま)。
+                SUBD    #1
+                ORA     <PT_RDIR
+                LDX     <PT_SP
+                LEAX    -PT_REC,X
+                STD     ,X
+                STX     <PT_SP
+                DEC     <PT_FREE
+pt_draw:
+                JSR     pt_hln                  ; 区間を塗る
+                LDU     <PT_EX
+                LDD     <PT_TX
+                ORA     <PT_RDIR
+                BSR     pt_push                 ; 区間の全体を同じ向きで積む
+                LDD     <PT_LX
+                SUBD    #2
+                CMPD    <PT_TX                  ; 左へ 2 画素以上はみ出したか
+                BLT     pt_nl
+                TFR     D,U
+                LDD     <PT_TX
+                BSR     pt_pushr                ; はみ出した部分を反対向きで積む
+pt_nl:
+                LDD     <PT_RX
+                ADDD    #2
+                CMPD    <PT_EX                  ; 右へ 2 画素以上はみ出したか
+                BGT     pt_jpop
+                LDU     <PT_EX
+                BSR     pt_pushr                ; はみ出した部分を反対向きで積む
+pt_jpop:
+                JMP     pt_pop
+
+;--- pt_push — 記録を 1 件積む。D = 左端 (bit15 = 向き)、U = 右端、行 = PT_CY -------
+;   満杯のときは積まない。pt_pushr は D の左端に、下ろした記録と反対の向きを付けて積む。
+pt_pushr:
+                ORA     <PT_RDIR
+                EORA    #$80
+pt_push:
+                DEC     <PT_FREE
+                BMI     pt_puf                  ; 満杯
+                LDX     <PT_SP
+                CMPX    #PT_STK_BOT             ; 置場は輪: 下端まで来たら上端へ回る
+                BNE     pt_pu1
+                LDX     #PT_STK_TOP
+pt_pu1:
+                LEAX    -PT_REC,X
+                STD     ,X
+                STU     2,X
+                LDA     <PT_CY+1
+                STA     4,X
+                STX     <PT_SP
                 RTS
+pt_puf:
+                INC     <PT_FREE
+                RTS
+;--- pt_old — いちばん古い記録を、次に下ろす位置へ移す。X = 次に下ろす位置、B = 空きの件数 ---
+;   古い記録は、もう塗られた行を指していることが多い。先に下ろせば枠が空く。
+pt_old:
+                PSHS    X
+                NEGB
+                ADDB    #PT_NREC-1              ; B = 積んである件数 - 1
+                LDA     #PT_REC
+                MUL
+                ADDD    ,S                      ; いちばん古い記録の位置 (輪)
+                CMPD    #PT_STK_TOP
+                BLO     pt_od1
+                SUBD    #PT_STK_TOP-PT_STK_BOT
+pt_od1:
+                TFR     D,U
+                PULS    X
+                CMPX    #PT_STK_BOT
+                BNE     pt_od2
+                LDX     #PT_STK_TOP
+pt_od2:
+                LEAX    -PT_REC,X               ; 移す先 = 次に下ろす位置の 1 つ手前
+                LDD     ,U
+                STD     ,X
+                LDD     2,U
+                STD     2,X
+                LDA     4,U
+                STA     4,X
+                JMP     pt_pp2
 
 
 ;------------------------------------------------------------------------------
@@ -4074,13 +3913,8 @@ pt_puf:
 ;   最初に $D402 を読んで取り消しの要求の保持を消し (参考書籍: 読出しの
 ;   負パルスがキャンセル IRQ のアクノリッジ)、アボートフラグ (参考書籍。$FF = IRQ 発生)
 ;   を置く。保持を消さないと、要求が残る限り IRQ が入り続ける。
-;   ROM の命令の実行中なら、実行中の命令を直ちに捨てて
-;   READY へ戻る (参考書籍): FM77AV の描画の後始末をして応答完了へ跳ぶ (S と DP は
-;   その先のメインループの先頭が既定に戻す)。IRQ を受けるのは命令の実行中と、転送された
-;   処理が自分で許したときだけである。どちらであるかは、割り込まれた場所 (スタックに
-;   積まれた PC) が ROM の中かどうかで見分ける (ワーク RAM に印を持たない)。$3F / $7F で
-;   転送された処理の中では印を置いて戻るだけ (動作観察のまま)。
-;   割り込まれた処理の DP は分からないので拡張アドレスで読み書きする。
+;   ROM の命令の実行中なら実行中の命令を捨てて READY へ戻り (参考書籍)、
+;   転送された処理の中では印を置いて戻るだけ (動作観察)。
 ; hdlr_SWI / hdlr_SWI2 / hdlr_SWI3 — 使わない (RTI のみ)
 ;------------------------------------------------------------------------------
 hdlr_IRQ:
@@ -4159,7 +3993,8 @@ fec_done:
                 RTS
 
 ;--- cell_next — バッファアドレスを 1 つ後ろへ ------------------------------------
-;   行末では次の行の先頭へ、モード画面の終りではその先頭へ (参考書籍)。
+;   行末では次の行の先頭へ。ページモード画面の終りではその先頭へ、スクロールモード画面の
+;   終りでは 1 行上へスクロールして最下行の先頭に留まる (参考書籍)。
 ;   全レジスタ保存
 cell_next:
                 PSHS    A,B
@@ -4366,22 +4201,14 @@ ps_cont:
 ;------------------------------------------------------------------------------
 ; $02 ERASE
 ;------------------------------------------------------------------------------
-                ; (本体は ROM 末尾 c02_ext。表から直接指すのでスタブは置かない。
-                ;  W ($D383) の指す範囲を BC ($D384) の背景色で消す。)
+                ; 本体は c02_ext。
+                ;  W ($D383) の指す範囲を消す (W=0 のとき BC の背景色を採る)。
 
-;------------------------------------------------------------------------------
-; cmd_05_print — PRINT ($D383=文字数, $D384〜=文字列)
 ;------------------------------------------------------------------------------
 ; cmd_03_console — $03 PUT (参考書籍)。
 ;   相対 3 = N (文字数)、相対 4〜 = 文字列 (オーダを含む)。各文字を putchar で描画する。
 ;
-;   カーソルを出したまま文字を描いてはならない。カーソルはセルの全高
-;     (行ピッチに従い 8 / 10 ライン) を反転して見せる方式なので、出したまま
-;     文字を重ねると反転が残り、次にカーソルを消すときに反転が逆に効いて
-;     セルが化ける。しかも反転はその時点のカーソル位置に掛かるため、描画中に
-;     位置が動くと「出した場所」と「消す場所」がずれて元へ戻せなくなる。
-;     よって出力の間はカーソルを消し、
-;     出し終えてから「出力前に出ていたか」どおりに出し直す。
+;   出力の間はカーソルを消し、出力後に出力前の状態へ戻す。
 ;   相対 1 の MSB は継続フラグビット S′ である。S′=1 で送られた文字列は、
 ;     残りが継続コマンドで届く。継続コマンド
 ;     はコマンドコード $64、相対 1 = S′、相対 3 = 今回転送するバイト数 (1〜120)、
@@ -4414,9 +4241,6 @@ c03_fin:
 ;--- con_cur_apply — A の bit0 どおりにカーソルを出す/消す --------------------
 ;   $0C コンソール制御 (A = 表示制御ワークの値) と $03 出力後の復帰 (A = 出力前の
 ;   カーソル指定 $00/$FF) で共用する。どちらも「有効なら出す、無効なら消す」。
-;   復帰は「出力前に出ていたか」で決める。表示状態のカーソル有効ビットは
-;     起動時から立っており、そちらで決めるとプログラムが出していないカーソルまで
-;     印字のたびに出てしまう (打点の有無や字の読み取りが崩れる)。
 ;   cursor_show / cursor_hide は現在値と希望値が同じなら何もしない。
 con_cur_apply:
                 LSRA                            ; C = bit0 (カーソル有効)
@@ -4445,11 +4269,9 @@ gep_ret:
 ;------------------------------------------------------------------------------
 cmd_0c_cursor:
                 ; コンソール制御 ($0C、参考書籍): 相対 3 = 制御フラグ CF を
-                ;   表示制御ワーク ($D021) へ格納する。CF のビット割付は
+                ;   表示制御ワーク (WK_CSCTL) へ格納する。CF のビット割付は
                 ;     bit0 = カーソル表示   bit1 = オーダ動作   bit2 = TAB 動作
                 ;     bit3 = ページウェイト bit4 = プットウェイト bit5 = オート LF
-                ;   で、読み手はそれぞれ con_cur_apply / ctl_order_act / pc_ht /
-                ;   con_page_wait / cmd_03_console / putchar_cr にある。
                 ; 応答データの相対 0 (エラーコード) は常に 0 = 正常終了で、受理時に
                 ;   dispatch_cmd2 が 0 を置いているのでここでは何もしない。
                 LDA     0,U                     ; CF
@@ -4746,20 +4568,19 @@ cp_ret:
 ;     $D38D〜 = 描画する文字列 (ASCII、各文字 = フォント 8 byte)
 ;
 ;   各文字を font_base からグリフ (8x8) として取得し、立っている画素を
-;   magX × magY の矩形ブロックとして pset_internal で打点する。ROM 末尾の
-;   空き領域へ ORG 不要で配置。描画色は入口で WK_COLOR を退避して CL を設定し、
-;   出口で復元する (sym_color_set / sym_color_fin、SYMBOL が描画色を汚さない)。
+;   magX × magY の矩形ブロックとして pset_internal で打点する。描画色は入口で WK_COLOR を退避して CL を
+;   設定し、出口で復元する (sym_color_set / sym_color_fin、SYMBOL が描画色を汚さない)。
 ;
 ;   アングルコード A (参考書籍の相対 5) の扱い:
 ;     グリフ内の桁送り方向 (u) と行送り方向 (v) を、画面上の単位ベクトル
 ;     DU / DV として持ち、座標の進みをすべてベクトル加算 (sym_addvec) に
 ;     置き換えてある。指定座標 (X, Y) は常にグリフ原点 (u=0, v=0) の置かれる
 ;     点で、A が変わると画面上でその点が字の別の隅になる。
-;       A=0 (ノーマル)     : u→右   v→下
-;       A=1 (90゜左回転)   : u→上   v→右
-;       A=2 (180゜左回転)  : u→左   v→上
-;       A=3 (270゜左回転)  : u→下   v→左
-;     文字列は u 方向へ 1 字あたり 8*W ドットずつ進む (参考書籍の図の矢印)。
+;       A=0 : u→右   v→下
+;       A=1 : u→上   v→右
+;       A=2 : u→左   v→上
+;       A=3 : u→下   v→左
+;     文字列は u 方向へ 1 字あたり 8*W ドットずつ進む。
 ;==============================================================================
 symbol_entry:
         IFDEF SUBSYS_TB
@@ -4776,17 +4597,25 @@ symbol_entry:
                 LEAU    2,U
         ENDC
                 ; --- パラメータ取り込み ---
-                LDA     9,U                     ; $D38C = 文字数 (0 は何も描かず、81 以上も誤りにしない)
+                LDA     9,U                     ; $D38C = 文字数
                 STA     <WK_SYM_CNT              ; 残文字数 (途中の処理はこの欄を使わない)
         IFDEF STAGE_ALT_RAM
                 DECA
                 CMPA    #79
                 LBHI    gr_err_nchar            ; 参考書籍の 1〜80 の外は文字数の誤り
         ENDC
+                ; アングルコードは描画色を確定する前に確かめる (誤りのときは描画色に触れずに終わる)
+                LDA     2,U                     ; $D385 = A (アングルコード)
+                CMPA    #3
+                LBHI    gr_err_param            ; 参考書籍の A は 0〜3
+                LDB     #2
+                MUL                             ; 表は 1 方向 2 byte
+                ADDD    #sym_vtab               ; 表内 A の位置 = 行送り DV
+                STD     <WK_SYM_VEC              ; 桁送り DU はその 2 byte 後
                 JSR     sym_color_set           ; CL / F ($D383/$D384) を確定 (旧色退避)
                 LBCS    gr_err_fn               ; F>5 (参考書籍は 0〜5)
         IFDEF SUBSYS_TB
-                ; 色 B,R,G ($D381〜$D383) を 4 回ぶんの値にし、F ($D384) が
+                ; 色 B,R,G (相対 3〜5 = $D383〜$D385) を 4 回ぶんの値にし、F (相対 6 = $D386) が
                 ;   1 なら色 0、2〜4 なら ALU の演算にする
                 LEAX    -2,U
                 JSR     av_col4c
@@ -4803,13 +4632,6 @@ tsc_op:
                 STA     <AV_ALU
 tsc_done:
         ENDC
-                LDA     2,U                     ; $D385 = A (アングルコード)
-                CMPA    #3
-                LBHI    gr_err_param            ; 参考書籍の A は 0〜3
-                LDB     #2
-                MUL                             ; 表は 1 方向 2 byte
-                ADDD    #sym_vtab               ; 表内 A の位置 = 行送り DV
-                STD     <WK_SYM_VEC              ; 桁送り DU はその 2 byte 後
                 LDA     3,U                     ; $D386 = W 文字横幅倍率 (0〜255)
                 BEQ     sym_done        ; 0 倍は何も描かない
                 STA     <WK_SYM_MAGX
@@ -4916,8 +4738,8 @@ sym_chadv_loop:
 ; sym_addvec / sym_vtab — SYMBOL の座標の進みを単位ベクトルの加算に一本化する
 ;   X = 進み方向 (符号つき 1 byte × 2 = 画面 X 成分, 画面 Y 成分)
 ;   U = 進める座標対 (16 bit の X, Y が並んだ 4 byte)
-;   表は「↓ → ↑ ←」を 1 周ぶん余分に持たせた輪で、アングルコード A の位置が
-;   行送り DV、その 2 byte 後が桁送り DU になる (参考書籍の図の関係)。
+;   表は「↓ → ↑ ←」の 4 要素の後に ↓ をもう 1 つ置いた 5 要素の輪で、アングルコード A の位置が
+;   行送り DV、その 2 byte 後が桁送り DU になる。
 ;   sym_addv2 は X = 桁送り DU (WK_SYM_VEC + 2) を置いてから進める入口。
 ;------------------------------------------------------------------------------
 sym_addv2:
@@ -4940,14 +4762,6 @@ sym_vtab:
                 FCB     -1,0                    ; ← : A=2 の桁送り / A=3 の行送り
                 FCB     0,1                     ; ↓ (輪を閉じるための再掲)
 
-
-;------------------------------------------------------------------------------
-; cmd_15_line, cmd_16_line2 — ライン描画
-;   $15: $D383=X0, $D385=Y0, $D387=X1, $D389=Y1, $D38B=色
-;   $16: 前回終点起点で $D383=新終点 X, $D385=新終点 Y
-;------------------------------------------------------------------------------
-                ; 本体は line15_entry。入口のパラメータ配置は
-                ; $D383=色 / $D385-=X0,Y0,X1,Y1 / $D38D=形状。
 
 ;--- sym_color_set / sym_color_fin — $19 SYMBOL 描画色の設定と復元 -------------
 ;   入口の受け渡し: CL=$D383 (カラー)、F=$D384 (ファンクション)。入口で現在の
@@ -5015,7 +4829,7 @@ pbc_bad:
 
 ;--- gr_xy — 座標 1 組 (X,Y) の画面内判定つき転記 (共通処理) -------------
 ;   入力: X = 読み元 (X 座標 2 byte → Y 座標 2 byte の順に並ぶこと)
-;         Y = 書き先 (同じ並びの 2 ワード (2 バイト))
+;         Y = 書き先 (同じ並びの 2 ワード (4 バイト))
 ;   出力: C=1 … 画面内。2 ワードとも転記済で X/Y は 4 byte 進む
 ;         C=0 … 画面外。違反ワードは転記せず打切る (呼出側は描画を取止める)
 ;   画面内は X が 0-639、Y が 0-199。負数は符号無し比較で巨大値になるため
@@ -5038,13 +4852,12 @@ l15_line:
         ENDC
 
 ;==============================================================================
-; pbb — $1C/$1E 任意幅ビット連続バイトブリットエンジン (ROM 末尾空き領域)
+; pbb — $1C/$1E 任意幅ビット連続バイトブリットエンジン
 ;
 ;   pb1_fast/pb2_fast のガード不合格形 (幅 8 非倍数・計数不足・分割転送) の
 ;   受け皿。動作観察のビット連続詰め (行末でバイト境界へ切上げない) を
 ;   16bit ビット FIFO で位相合わせし、左右端マスク付きのバイト単位書込で
-;   1 行を一括処理する。ドット単位の経路 (1 ドット毎の Y*80/X>>3/マスク
-;   シフト再計算) は座標範囲外の防御フォールバックとしてのみ残す。
+;   1 行を一括処理する。
 ;   パターン供給は pbs_next 経由 = $D38D 計数尊重・$D400 ガード・$64 分割
 ;   転送継続をそのまま継承する。
 ;
@@ -5057,7 +4870,7 @@ PBB_BCNT        EQU     PBF_CNT         ; 1: 行内出力バイトカウンタ
 PBB_EM          EQU     PBF_PREV        ; 1: 現出力バイトの端マスク
 PBB_QN          EQU     PBF_C           ; 1: 行末バイトの取得ビット数 = (X1&7)+1
 
-;--- pbb_coord — 座標範囲ガード。C=1 → 範囲外 (ドット単位の防御経路へ) --------
+;--- pbb_coord — 座標範囲ガード。C=1 → 範囲外 ------------------------------------
 pbb_coord:
                 LDD     ,U              ; X0 > X1 は不正
                 CMPD    4,U
@@ -5075,12 +4888,24 @@ pbb_coord:
                 RTS
 
         IFNDEF SUBSYS_AV
+;==============================================================================
+; line15_entry — cmd $15 LINE (Type-C の位置。Type-A / Type-B の位置は後方の
+;   SUBSYS_AV の line15_entry)
+;   入口のパラメータ配置:
+;     $D383 = 色 (下位 3bit), $D384 = 描画ファンクション (0-4。1=PRESET は背景色で
+;             描画、>4 は不正として描かない。2-4 は OR/AND/XOR),
+;     $D385-6 = X0, $D387-8 = Y0, $D389-A = X1, $D38B-C = Y1,
+;     $D38D = 形状 (0=直線 / 1=矩形枠 / それ以外=塗潰し矩形)
+;   範囲外座標の扱い: 端点座標が 1 ワードでも画面外なら何も描かず $3F を返す
+;   (gr_err_coord)。画面内は X が 0-639、Y が 0-199 で、負数は符号無し比較で
+;   巨大値となるため同じ判定で外れる。折線 ($16)・点列 ($17) も同じ。
+;==============================================================================
 line15_entry:
                 BSR     fig_color               ; 色+描画ファンクション確定 ($D383/$D384)
                 BCS     gr_err_fn               ; F>4 (参考書籍は 0〜4)
                 ; 座標 4 ワード ($D385=X0, $D387=Y0, $D389=X1, $D38B=Y1) を範囲検査
                 ; しながら WK_LN_X0/Y0/X1/Y1 (連続 4 ワード) へ取り込む。1 ワードでも
-                ; 画面外なら何も描かずに正常終了する。
+                ; 画面外なら何も描かずにエラー出口へ進む。
                 LEAX    2,U
                 LDY     #WK_LN_X0
 l15_chk:
@@ -5118,11 +4943,8 @@ l15_rect:
 ;     Yn = $D386+6(n-1) (16bit, 0-199)
 ;     CLn= $D388+6(n-1) (カラー 0-7)
 ;     Fn = $D389+6(n-1) (ファンクションコード 0-4)
-;   本実装は内部打点 pset_internal を用いる。ファンクションコード Fn は
-;   fn_color が WK_PB_FN へ確定し、pb1e_op が OR/AND/XOR を 3 面それぞれへ
-;   適用する (PSET 固定ではない)。
-;   範囲外座標: 画面外の座標を持つ点に達したらそこで打切り、以降の点も
-;   打たない。$15/$18 と同じく「範囲外は描かない」で揃える。
+;   Fn は fn_color が確定し pb1e_op が合成する。
+;   画面外の点で打ち切る。
 ;------------------------------------------------------------------------------
 point_entry:
                 LDA     0,U                     ; $D383 = N
@@ -5168,7 +4990,7 @@ tpt_fn:
                 RTS
         ELSE
                 TFR     U,X                     ; 点 n のパラメータ先頭
-                LDY     #WK_PX_X                ; WK_PX_X/WK_PX_Y は 2 ワード (2 バイト) 連続
+                LDY     #WK_PX_X                ; WK_PX_X/WK_PX_Y は 2 ワード (4 バイト) 連続
                 JSR     gr_xy                   ; 範囲検査つき転記
                 BCC     gr_err_coord            ; 画面外の点 (参考書籍)
                 LDA     5,U                     ; Fn (参考書籍の相対 9+6(n-1))
@@ -5182,31 +5004,28 @@ tpt_fn:
         ENDC
 pt_done:
 bc_stop:
-                RTS                 ; 直前の JMP cmd_stub_ok を共用
+                RTS                 ; 共通出口
 
 ;--- 図形系コマンドのパラメータ誤り (参考書籍のエラーコード) --------------
-;   各コマンド本体は既に不正パラメータを検出して「描かずに応答」しているので、
-;   その分岐先をここへ向け替えて、参考書籍が定めるコードを添えるだけにする。
-;   5 つの入口は「値を A に置いて cmd_err へ落ちる」だけなので、後続の LDA を
-;   CMPX #imm の即値として読み飛ばす形 (FCB $8C) で 1 本につないである。
-;   CMPX が壊すのは CC だけで、cmd_err は CC を見ない。
+;   各入口は参考書籍のエラーコードを A に置いて cmd_err へ進む
+;   (最後の入口だけ cmd_err へそのまま落ちる)。
         IFDEF STAGE_ALT_RAM
 gr_err_nchar:
                 LDA     #$42                    ; 文字数の誤り
-                FCB     $8C                     ; 次の LDA #$45 を即値として読み飛ばす
+                BRA     cmd_err
         ENDC
 gr_err_param:
                 LDA     #$45                    ; コマンド、パラメータの誤り
-                FCB     $8C                     ; 次の LDA #$43 を即値として読み飛ばす
+                BRA     cmd_err
 gr_err_ncol:
                 LDA     #$43                    ; 色数の誤り
-                FCB     $8C                     ; 次の LDA #$41 を即値として読み飛ばす
+                BRA     cmd_err
 gr_err_ncoord:
                 LDA     #$41                    ; 座標数の誤り
-                FCB     $8C                     ; 同上 (LDA #$40)
+                BRA     cmd_err
 gr_err_fn:
                 LDA     #$40                    ; ファンクションコードの誤り
-                FCB     $8C                     ; 同上 (LDA #$3F)
+                BRA     cmd_err
 gr_err_coord:
                 LDA     #$3F                    ; グラフィック座標値の誤り
 
@@ -5217,9 +5036,10 @@ gr_err_coord:
 ;------------------------------------------------------------------------------
 ; cmd_err / cmd_stub_ok — コマンド処理の共通出口
 ;   cmd_err     : A = 参考書籍のエラーコード。共有 RAM 相対 0 (参考書籍
-;                 の ERROR CODE) へ置いて復帰する。コマンドは実行しない。
-;   cmd_stub_ok : 正常応答。相対 0 は受理時に 0 化済み、相対 1 は応答完了処理が
-;                 0 に戻すので、ここでは何もせず戻ればよい (= ハングしない)。
+;                 の ERROR CODE) へ置いて復帰する。ここではコマンドを実行しない (点列 $17
+;                 のように途中まで描いてから来る経路もある)。
+;   cmd_stub_ok : 正常応答。相対 0 は受理時に 0 化済み、相対 1 は応答完了時にタイマ事象のビットを除いて
+;                 0 に戻すので、ここでは何もせず戻ればよい。
 ;------------------------------------------------------------------------------
 cmd_err:
                 STA     >SH_ERR
@@ -5228,27 +5048,12 @@ cmd_stub_ok:
 
 
 
-;------------------------------------------------------------------------------
-; cmd_17_circle, cmd_19_paint — 円描画 / PAINT (簡易実装)
-;------------------------------------------------------------------------------
-
-                ; 本体は別ルーチンに配置。jmp で飛ばす。
 
 
-; cmd $3D Set Timer / $3E Read Timer — 本体は別ルーチン (settimer_entry/
-;   readtimer_entry) に配置。ここは JMP スタブのみ。
 
 ;------------------------------------------------------------------------------
-; cmd_1b_getblock1 / cmd_1c_putblock1 / cmd_1d_getblock2 / cmd_1e_putblock2
-;   矩形の読出し・書込みコマンド。共有 RAM 経由の受け渡しは動作観察による。
-;   本体は別ルーチンに配置。stub から JMP で飛ぶ。
 ;------------------------------------------------------------------------------
 
-;------------------------------------------------------------------------------
-; cmd_3f_jmp — 拡張コマンド $3F: メイン CPU 指定の任意サブ CPU アドレスへジャンプ
-;   $D38B-$D38C にジャンプ先アドレス (16-bit big-endian)
-;   JSR ではなく JMP で渡す (戻ってこなくてもよい)。
-;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 ; cmd_3f_bytecode — 拡張コマンド $3F のバイトコードインタプリタ
 ;
@@ -5261,7 +5066,6 @@ cmd_stub_ok:
 ;   $93 addr   : CALL (JSR addr、ワーク RAM 内の 6809 機械語ルーチン実行)
 ;   その他      : エラー終了 (参考書籍の $45 = コマンド、パラメータの誤り)
 ;
-; アドレスはディスパッチテーブル経由で呼ばれるため $E000 台で OK。
 ;------------------------------------------------------------------------------
 cmd_3f_bytecode:
                 ORCC    #$10            ; 転送された処理の中では取り消しの IRQ を受けない
@@ -5284,8 +5088,6 @@ bc_loop:
                 ; $94+ → エラー
 bc_error:
                 ; 誤りは共有 RAM 相対 0 (参考書籍の ERROR CODE) へ置く。
-                ;   相対 1 は STATUS (PF 割込コード / 各種タイマ割込 / 継続フラグ)
-                ;   のビット割付なので、エラーコードを置いてはならない。
                 LDA     #$45                    ; コマンド、パラメータの誤り (参考書籍)
                 BRA     cmd_err
 bc_call:
@@ -5323,19 +5125,15 @@ hdlr_NMI:
                 TFR     A,DP                    ; DP=$D0 を確立 (RTI が復元)
                 ; NMI は全レジスタ自動退避 (E フラグ) 済みで RTI が全復元するため、
                 ;   手動の PSHS/PULS は不要。
-                ; --- $D00A ガード: セット中は作業スキップ ---
+                ; --- TM_GUARD が 0 でない間は見送る (値の意味は main_loop の注釈) ---
                 TST     <TM_GUARD
-                BNE     nmi_skip_work
-                JSR     nmi_subwork             ; タイマ処理 (拡張アドレスのまま。BSR へ
-                                                ;   縮めない)
+                BNE     nmi_hold                ; TM_GUARD が 0 でない
+                JSR     nmi_subwork             ; タイマ処理
 nmi_ret:                                        ; nmi_subwork はこの戻りアドレスで周期 NMI からの呼出しを見分ける
-nmi_skip_work:
-                CLR     <TM_GUARD
                 RTI                             ; E=1 で全レジスタ復元
-
-;==============================================================================
-; ドット単位書込ヘルパは持たない (書込はバイトブリットエンジンに一本化)。
-;==============================================================================
+nmi_hold:
+                INC     <TM_GUARD       ; 見送った数を加える (main_loop が反映する)
+                RTI
 
 ;==============================================================================
 ; chain16_entry — cmd $16 CHAIN 本体
@@ -5343,9 +5141,7 @@ nmi_skip_work:
 ;               $D385 = 点数 N (2-30) / $D386〜 = N 組の (X 16bit, Y 16bit)
 ;   N-1 本の連結線分 (ポリライン) を描画する。範囲検査は $15 と同方針:
 ;   1 点でも X >= 640 / Y >= 200 (負数は符号無し比較で巨大値) があれば一切
-;   描画しない。これにより VRAM 外への打点流出が構造的に発生しない。
-;   ワーク: 点/線分カウンタは Y レジスタに置く (RAM を 1 byte も占めない)。
-;   draw_line は Y を保存するため線分ループを跨いで保持できる。
+;   描画しない。
 ;==============================================================================
 
 chain16_entry:
@@ -5444,8 +5240,7 @@ cbv_bad:
 ;   - $D383 = 当該チャンクのデータ計数、データ本体は $D384 から (動作観察)
 ;   - 出力は cbg_emit (有界エミッタ) 経由。124 byte で $D381 bit7 を立てて
 ;     応答側継続ハンドシェイク (メインの継続コマンド $64 待ち) → $D384 から再開。
-;     共有 RAM ($D384-$D3FF) の外には何 byte あっても絶対に書かない
-;     (上限無しの直書きは I/O 領域 $D408 を汚して画面を消灯させる)
+;     応答は $D384-$D3FF に閉じる。
 ;==============================================================================
 
         IFNDEF SUBSYS_TB
@@ -5456,7 +5251,7 @@ cbv_bad:
 ;   出力: $D383=チャンク計数、$D384+ にビットイメージ
 ;         (左上から右、上から下、MSB 左。行末で切上げないビット連続詰めで、
 ;          全行終了時のみ余りを 0 詰め = 総 byte 数は ceil(幅*高/8))
-;   色数が 0 または 9 以上は無効指定 → 計数 0 の空応答 (描かず正常応答の方針)
+;   色数が 0 または 9 以上は無効指定 → 計数 0 の応答とエラー $43 を返す。
 ;------------------------------------------------------------------------------
 getblock1_entry:
                 ; 入力をローカルへコピー (出力で上書きされる前に)
@@ -5515,9 +5310,6 @@ cbp_rts:
                 RTS
 
 ;------------------------------------------------------------------------------
-; $1C の汎用経路は任意幅対応のバイトブリットエンジン (pbb1_entry、ROM 末尾)
-;   が受け持つ。座標範囲外は動作観察のエラー条件であり「描かず正常応答」
-;   ($15/$16 と同方針)。
 ;------------------------------------------------------------------------------
 
         IFNDEF SUBSYS_TB
@@ -5548,19 +5340,15 @@ getblock2_entry:
 ;   WK_RECT_X0/Y0-X1/Y1 を走査し、ビット判定結果を 8 bit/byte に集約して
 ;   cbg_emit (有界エミッタ) へ流す。WK_GB_TGTCOL=0 なら色リスト一致 ($1B)、
 ;   非 0 ならその値をプレーンマスクとして抽出 ($1D)。
-;   ビット詰めは参考書籍の図どおり行末でバイト境界へ
-;   切上げない連続詰め (1 行 = 幅ぶんのビットがそのまま連なる)。
+;   ビット詰めは行末で切り上げない連続詰め (1 行 = 幅ぶんのビットがそのまま連なる)。
 ;   最終バイトの端数ビットは 0 で埋める。
 ;   フラッシュは $1B は全行の最後に 1 回、$1D は各プレーンの最後に 1 回
 ;   (= gb_scan 呼出単位)。
 ;   出力は共有 RAM の応答領域 ($D384-$D3FF) に厳密に閉じる (cbg_emit が
 ;   124 byte 毎に応答側継続ハンドシェイクを行う)。
 ;
-;   ビット集約は「番兵ビット」方式: WK_GB_BITACC を $01 で初期化し、
-;   画素ビットを ROL で下から入れる。番兵が bit7 から押し出された時点
-;   (= C=1) が 1 byte 確定で、A にはちょうど 8 画素ぶんが揃っている。
-;   残ビット数の別変数を持たずに済み、端数の有無は BITACC が $01 か
-;   どうかで判る。
+;   ビット集約は番兵ビット方式: WK_GB_BITACC を $01 で初期化し、画素ビットを ROL で入れ、
+;   番兵が押し出された時点 (C=1) で 1 byte 確定。
 ;------------------------------------------------------------------------------
 gb_scan:
                 LDA     #$01                    ; 番兵ビットのみ = 端数なし
@@ -5632,7 +5420,7 @@ cbg_st:
         IFNDEF SUBSYS_TB
 ;--- gb_putpixbit — WK_PX_X/Y の 1 画素を判定して集約バッファへ 1 bit 詰める ---
 ;   1 byte 揃ったら cbg_emit へ流して番兵を張り直す。
-;   戻り: C=1 なら「今の 1 bit で 1 byte 確定」。壊す: A (X/Y/U は被呼出側で保存)
+;   戻り: C=1 なら「今の 1 bit で 1 byte 確定」。壊す: A, B (X/Y/U は被呼出側で保存)
 gb_putpixbit:
                 JSR     get_pixel_color
                 TST     <WK_GB_TGTCOL
@@ -5660,19 +5448,21 @@ gbp_clist:
 ;   $D383=属性, $D384=文字コード,
 ;   $D386/$D388/$D38A/$D38C = X0,Y0,X1,Y1 (文字座標、各 16bit 枠の下位 byte),
 ;   $D38D = ボックスフラグ (0=直線 / 1=矩形の 4 辺枠 / 2=矩形塗潰し)。
-;   両端点を検証し、フラグ分岐 (chl_disp、ROM 空き領域) から直線サブルーチン
-;   cl_line を呼び分ける。cl_line は DDA (主軸駆動) で各セルへ文字を打つ。
-;   属性は既存セルの bit7 (論理行頭マーカ) を保存して合成する (動作観察)。
+;   両端点を検証し、フラグ分岐 (chl_disp) から直線サブルーチン
+;   cl_line を呼び分ける。cl_line は桁か行へ 1 歩ずつ進む階段で各セルへ文字を打つ。
+;   属性は既存セルの bit7 (フィールド先頭フラグ F) を保存して合成する (動作観察)。
 ;==============================================================================
 chline_entry:
-                LDA     3,U                     ; $D386 = X0
-                LDB     5,U                     ; $D388 = Y0
-                JSR     cb_valid
-                BCC    cb_coorderr             ; 座標範囲外 (参考書籍)
-                LDA     7,U                     ; $D38A = X1
-                LDB     9,U                     ; $D38C = Y1
-                JSR     cb_valid
-                BCC     cb_coorderr
+                LDA     <WK_SCREEN_W            ; 両端の桁が画面の桁数より小さいこと
+                CMPA    3,U
+                BLS     cb_coorderr
+                CMPA    7,U
+                BLS     cb_coorderr
+                LDA     <WK_SCREEN_H            ; 両端の行が画面の行数より小さいこと
+                CMPA    5,U
+                BLS     cb_coorderr
+                CMPA    9,U
+                BLS     cb_coorderr
                 LDA     0,U                     ; $D383 = 属性
                 STA     <CL_ATR
                 LDA     1,U                     ; $D384 = 文字
@@ -5713,10 +5503,7 @@ cb_coorderr:
 ;   $D381 bit7 =「継続チャンクあり」をメインへ提示し BUSY を落として待つ。
 cbg_wait64:
                 BSR     sh_cont_set
-                ; ここで $D382 を清算してはならない。メイン側の完了判定は
-                ;   「$D382 が 0 になったら応答領域を読み戻す」であり、受理直後に
-                ;   0 へ戻すと、次チャンクをまだ 1 byte も書いていない走査中に
-                ;   完了と誤判定され、未完成の応答領域が読み取られる。
+                ; ここでは $D382 を 0 に戻さない。
                 CLR     >SH_PARAM               ; 新チャンク計数 = 0
 cbget_fin:
 cbput_fin:
@@ -5752,9 +5539,7 @@ cbn_done:
 ; cmd_06-$09 — キャラクタブロック GET@/PUT@ (動作観察)
 ;   $06/$07 = 形式1 (文字のみ)、$08/$09 = 形式2 (属性+文字)。
 ;   $D383=X1, $D384=Y1, $D385=X2, $D386=Y2 (文字座標の矩形)。
-;   本体は ROM 末尾空き領域 (cbget_entry / cbput_entry)。
-;   応答の形式は GET@/PUT@ の呼出 (動作観察) に従う。矩形描画の本体
-;   (do_rect) は line15_entry から使う別ルーチンである。
+;   本体は cbget_entry / cbput_entry。
 ;------------------------------------------------------------------------------
 cmd_06_cget1:
                 CLRA                            ; 形式1 = 文字のみ
@@ -5821,16 +5606,13 @@ sh_cont_ack:
 ;   要求し、メインは継続コマンド $64 ($D381 bit7=S′, $D383=計数, $D384〜=データ)
 ;   を書いて分割転送を継続する。S′ が 0 なら継続は来ないので、計数を使い切った
 ;   先 (と共有 RAM の終端の先) のパターンは 0 のビットとする。
-;   $64 以外のコマンドが来たらブロックを放棄し、その新コマンドを食わずに
-;   そのまま再ディスパッチする。
+;   $64 以外のコマンドは検査しない。
 ;   共有 RAM 終端 ($D400) より先は読まない (I/O レジスタ不可侵の防御)。
 ;==============================================================================
 pbs_init:
                 LEAX    11,U            ; パターン先頭
                 STX     <PBS_PTR
-                LDA     10,U                    ; データ byte 数 (拡張アドレス指定:
-                                                ;   外から直接呼ばれた場合も DP=$D0 で
-                                                ;   来るため DP 非依存にする)
+                LDA     10,U                    ; データ byte 数
                 STA     <PBS_CNT
                 RTS
 pbs_guard:                                      ; 共有 RAM の終端に達した
@@ -5901,11 +5683,8 @@ cb_drawcell:
 ;   よう、ループの戻り先 sh_rereq とは分けてある)。
 ;   参考書籍は継続コマンド ($64) を送り続けることを求めるので、
 ;   受け取ったコマンドコードは検査しない。
-;   BUSY を落とす前に相対 2 を見る。参考書籍の時系列では、メインは
-;   BUSY が落ちたのを見て HALT し、コマンドを置いて HALT を解除する。サブはその間 BUSY の
-;   ままコマンドを実行する (参考書籍)。HALT を解いた時点でコマンドが置かれていれば、
-;   BUSY を落とさずにそのまま受け取る (落とすとメインが実行済みと読み、次のコマンドで
-;   上書きする)。
+;   BUSY を落とす前に相対 2 を見る (参考書籍)。HALT を解いた時点でコマンドが
+;   置かれていれば BUSY を落とさずにそのまま受け取る。
 sh_rereq_c:
                 CLR     >SH_CMD                 ; 受理済コマンドを消費してから待つ
 sh_rereq:
@@ -5931,7 +5710,7 @@ sh_rqtake:
                 RTS
 
 ;==============================================================================
-; $01 INIT / $0D ERASE 2 (参考書籍。ROM 末尾空き領域)
+; $01 INIT / $0D ERASE 2 (参考書籍)
 ;==============================================================================
 
 ;--- c01_ext — $01 INIT 本体 ----------------------------------------------------
@@ -6023,8 +5802,7 @@ c01x_r20:
 c01x_lb:
                 STX     <WK_LINE_BYTES
                 ; ---- スクロール範囲 ($D386=上端/$D387=行数) を格納・適用 ----
-                ;   範囲は検証するだけでなく必ず適用する。適用しないと範囲指定時も
-                ;     文出力が全画面へ流れ、スクロールが画面全体に及んでしまう。
+                ;   範囲は検証して適用する。
                 ; ---- 相対 10 (GR) を控える (draw_char_at_cursor が参照) ----
                 LDA     7,U             ; $D38A = 単色表示 (参考書籍の GR)
                 STA     <WK_MONO
@@ -6033,7 +5811,7 @@ c01x_lb:
                 STA     <WK_PF_SHOW
                 BSR     win_setup
                 ; ---- 消去指定 ERS (相対 9) ----
-                LDA     6,U             ; 0 = 再初期化のみ (VRAM/カーソル不変)
+                LDA     6,U             ; 0 = 再初期化のみ (消去しない。機能キー行は描く)
                 BEQ     c01x_done
                 JSR     pc_home                 ; カーソルホーム (範囲左上へ)
                 LDA     #$07                    ; 既定の文字属性
@@ -6049,10 +5827,10 @@ c01x_rej:
                 LDA     #$3C                    ; INIT のパラメタの誤り (参考書籍)
                 STA     >SH_ERR
                 LDX     #c01x_rstp
-                LEAY    ,U                      ; 複写は Y で行う。U は共有 RAM の
-c01x_cp:                                        ;   パラメータ欄 ($D383) を指したまま
-                LDA     ,X+                     ;   でないと、入り直した先の n,U の
-                STA     ,Y+                     ;   参照が 8 バイトずれる
+                LEAY    ,U                      ; 複写は Y で行う (U は変えない)
+c01x_cp:
+                LDA     ,X+
+                STA     ,Y+
                 CMPX    #c01x_rstp+8
                 BNE     c01x_cp
                 JMP     c01_ext                 ; RESET 時のパラメータで初期化し直す
@@ -6063,7 +5841,8 @@ c01x_done:
 ;   範囲パラメータの行単位は「そのとき設定した行数 ($D385) の行」である
 ;   (上端 × 行ピッチ が区画の上端になる。動作観察)。
 ;   よって行ピッチによる読み替えは行わず、指定された行番号をそのまま採る。
-;   結果が不正 (top>=end) の場合は画面全体 [0,行数) へ退行。
+;   結果が不正 (top>=end) の場合は使用可能な範囲全体 [0,使用可能行数) へ退行
+;   (使用可能行数 = 行数、機能キー行を表示するときは行数 - 2)。
 ;   入力: DP=$D0 (作業 RAM 直接参照)、WK_ROW20/WK_SCREEN_H 設定済であること。
 ;   A,B 破壊。c01_ext から JSR。
 win_setup:
@@ -6119,7 +5898,7 @@ c02_ext:                                ; $02 も W = 0 のときだけ BC を�
 ;--- c02_ext — $02 ERASE 本体 (参考書籍) ---------------------
 ;   相対 3 = W 消去範囲 / 4 = BC 背景色。$0D の W = 0 の経路と同じ処理なのでここから入る。
 ;   Type-B の位置でない ROM は、W が 0 でないとき BC を使わず、今の背景色で消す (動作観察)。
-;   その ROM の入口は上の c0d_ext の中 (STAGE_ALT_RAM はここ)。
+;   その ROM の入口は上の c0d_ext の中。
         IFDEF SUBSYS_TB
 c02_ext:
         ELSE
@@ -6139,7 +5918,7 @@ c02_ext:
 ;--- erase_cmd — $02 / $0D の共通処理: W ($D383) の指す範囲を消す ---------------
 ;   W = 0 全画面 / 1 スクロールモード画面 / 2 ページモード 1 画面 /
 ;   3 ページモード 2 画面 (参考書籍)。
-;   全画面のときはバッファアドレスをホームへ戻す。一覧に無い W は何もしない。
+;   全画面のときはバッファアドレスをホームへ戻す。W が 4 以上のときは何もしない。
 erase_cmd:
                 BSR     ec_body                 ; W の範囲を消してから
 ;--- f_head — 画面の先頭のセルのアトリビュートに F を立てる (動作観察)。A 破壊 ------
@@ -6162,7 +5941,7 @@ ec_body:
                 LDB     <WK_WIN_TOP
                 DECA
                 BEQ     ec_top0                 ; W = 2: [0, スクロール上端)
-                CLRB                            ; 一覧に無い W = 空の範囲
+                CLRB                            ; W が 4 以上 = 空の範囲
                 BRA     ec_top0
 ec_sc:
                 LDA     <WK_WIN_TOP
@@ -6171,7 +5950,7 @@ ec_home:
                 JSR     pc_home                 ; 全画面はバッファアドレスをホームへ
 ec_top0:
                 CLRA
-                BRA     erase_rows
+                FCB     $8C                     ; 次の LDA <WK_WIN_END を即値として読み飛ばす
 ec_p2:
                 LDA     <WK_WIN_END
 
@@ -6179,9 +5958,7 @@ ec_p2:
 ;   A = 上端行 / B = 下端行+1 (A >= B なら何もしない)。X / Y / U を壊す
 ;   (putchar 契約の B と X は呼出元 pc_cls が退避する)。
 ;   コンソールバッファは Null コード ($00) + 現在の文字属性、VRAM は背景色
-;   (WK_BGCOL) で埋める。画面の先頭から消すときは表示開始位置も 0 へ戻す
-;   (表示開始位置はスクロール範囲が画面全体のときだけ動くので、範囲を分けて
-;   いるときは 0 のままであり、書き戻しても表示位置は変わらない)。
+;   (WK_BGCOL) で埋める。画面の先頭から消すときは表示開始位置も 0 へ戻す。
 erase_rows:
                 PSHS    A,B                     ; 0,S = 上端行 / 1,S = 下端行+1
                 CMPA    1,S
@@ -6196,9 +5973,8 @@ erase_rows:
                 CLR     <WK_SF_ADR              ; フィールドの構成が消えるので
                 CLR     <WK_SF_ADR+1            ;   SF の一連の文字列も終える
 er_cb:
-                CLR     ,X                      ; 文字 = Null コード
-                STB     CONBUF_ATTR-CONBUF_CHAR,X ; アトリビュート
-                LEAX    1,X
+                CLR     ,X+                     ; 文字 = Null コード
+                STB     CONBUF_ATTR-CONBUF_CHAR-1,X ; アトリビュート
                 CMPX    ,S
                 BNE     er_cb
                 LEAS    2,S
@@ -6222,9 +5998,8 @@ er_ret:
 ;   プレーン k (B=bit0 / R=bit1 / G=bit2) を、ビットが 1 なら $FF、0 なら $00 で
 ;   埋める。X = 先頭オフセット / D = 終端オフセット (どちらも偶数で X < D)。
 ;   3 プレーンを 1 周で書くため、充填値を作業域へ 3 組並べてから D / Y / U へ
-;   載せる。画面消去はカーソルの反転も一緒に消すので、反転状態の控えを落とす。
-;   全レジスタを壊す。呼出しの深さを浅く保つため、退避はスタックではなく作業域で
-;   行う (この経路は文字出力の奥から呼ばれ、利用者の常駐データの手前まで積む)。
+;   載せる。消去の前にカーソルの反転を外し、反転状態の控えを落とす。
+;   全レジスタを壊す。
 vfb_range:
         IFDEF SUBSYS_TB
 ;   Type-B の位置: 12 の面の [X, D) を、文字の属性 WK_TXT_COL の地の色で埋める。終端が
@@ -6260,15 +6035,16 @@ tvf_lp:
         ELSE
                 STD     <ER_END                 ; 終端オフセット
                 STX     <ER_SRC                 ; 先頭オフセット
+                LDB     <WK_CURSOR_EN           ; カーソルの反転は消去の前に外す (カーソルが消す範囲の
+                JSR     cursor_hide             ;   外にあるときも画面と控えが揃う)。出す指定は
+                STB     <WK_CURSOR_EN           ;   そのまま保つ
                 LDA     IO_VRAM_GATE            ; VRAM gate ON (読出で開く)
                 LDB     <WK_BGCOL
                 LDX     #ER_V
 vfb_mk:
                 CLRA
                 LSRB                            ; carry = このプレーンのビット (B → R → G)
-                BCC     vfb_m0
-                COMA                            ; ビット 1 → $FF
-vfb_m0:
+                SBCA    #0                      ; ビット 1 → $FF
                 STA     ,X+                     ; 充填値 2 byte
                 STA     ,X+
                 CMPX    #ER_V+6
@@ -6285,7 +6061,6 @@ vfb_loop:
                 CMPX    <ER_END
                 BNE     vfb_loop
                 STA     IO_VRAM_GATE            ; gate OFF (書込で閉じる)
-                CLR     <WK_CURSOR_ON            ; 反転は消した範囲ごと消えた
                 JMP     pf_show                 ; 消した後は機能キー行を描き直す
         ENDC
 ;--- su_padd — D += 1 行のバイト数 (WK_LINE_BYTES) ------------------------------
@@ -6295,7 +6070,6 @@ su_padd:
 
         IFNDEF SUBSYS_TB
 ;--- c01x_rstp — $01 の誤り時に使う RESET 時のパラメータ -----------------------
-;   参照は `LDX #c01x_rstp` の即値のみで位置に依存しない。区画の末尾へ置いてある。
 c01x_rstp:
                 ; RESET 時のパラメータ (参考書籍)
                 FCB     0                       ; BC  背景色
@@ -6309,9 +6083,9 @@ c01x_rstp:
         ENDC
 
 
-;--- su_ofs — A=行番号 → D=行先頭 VRAM オフセット (行バイト 640/800) ----------
+;--- su_ofs — A=行番号 → D=行先頭 VRAM オフセット (行バイト 640/800、Type-B は 320) ----------
 ;   scroll_up / cursor_toggle / draw_char_at_cursor 共用。A,B のみ破壊。
-;   8px 行 = A*80*8 = A*640 / 10px 行 = A*100*8 = A*800。
+;   8px 行 = A*80*8 = A*640 / 10px 行 = A*100*8 = A*800 (Type-B の位置は A*320 固定)。
 su_ofs:
         IFDEF SUBSYS_TB
                 LDB     #40                     ; Type-B の位置: 1 ライン 40 バイト
@@ -6435,7 +6209,6 @@ tsu_q:
                 BSR     conbuf_scroll           ; コンソールバッファも 1 行上へ (参考書籍)
                 LDA     >IO_VRAM_GATE           ; gate ON (read で開く)
                                                 ; D を使う計算より先に開くこと
-                                                ;   (A=D 上位の破壊事故防止)
                 LDA     <WK_WIN_END
                 BSR     su_ofs                  ; D = 範囲下端オフセット (排他)
                 PSHS    A,B                     ; ,S = 範囲下端オフセット
@@ -6445,9 +6218,8 @@ tsu_q:
                 CMPA    <WK_SCREEN_H
                 BNE     sw_sub
                 ; --- 画面全体: 表示の起点を 1 行ぶん進める ---
-                ;   VRAM を動かさずに上スクロールする手立ては、表示の起点を持つ
-                ;   レジスタ ($D40E/$D40F) を書き換えることだけである (ハードウェアの
-                ;   制約)。加算は X で行い、書く順は「ハードウェア → 控え」にする。
+                ;   上スクロールは表示の起点のレジスタ ($D40E/$D40F) を書き換える。
+                ;   加算は X で行い、書く順は「ハードウェア → 控え」にする
                 LDX     <WK_VRAM_OFS
                 LDD     <WK_LINE_BYTES          ; 1 行のバイト数 (640 / 800)
                 LEAX    D,X
@@ -6577,17 +6349,7 @@ csp_lp:
 csp_done:
                 PULS    X,PC
 
-;------------------------------------------------------------------------------
-; cmd_0d_nerase — ERASE2 / NERASE ($0D): 画面消去 + 文字色変更
-;   入口の受け渡し: $D383=W(消去範囲, 0=全画面), $D384=BC(背景色), $D385=FC(文字色)。
-;   BASIC の CLS はこのコマンド ($D383=0 で全画面消去) で行う。
-;   WK_ATTR_MODE はどの経路からも参照されないので設定しない。
-;------------------------------------------------------------------------------
-                ; 本体は ROM 末尾 c0d_ext。W ($D383) を必ず見てから消去する。
-                ;   W≠0 (画面切替/部分消去系) では全画面を消さない — 消すと
-                ;   ロード済のグラフィックを壊してしまう。
-
-;--- pfm_wch — prw_fast 行末書戻し用 8bit 左シフトチェーン (空き領域) ----------
+;--- pfm_wch — prw_fast 行末書戻し用 8bit 左シフトチェーン -----------------
 ;   入口 = pfm_wch + k (ABX)。A を (8-k) 回左シフト → FIFO 残量 (MSB 詰め、
 ;   k=0 は 8 シフトで空) を書き戻して行末バイト処理 (prw_last) へ。
 pfm_wch:
@@ -6641,7 +6403,7 @@ ptk_slow:
 ;   で必ず落ちる)。
 ;   入力: PBF_ROWVR=行左端 (B 面基準)、PBF_PHASE/NB/LMASK/RMASK/PBB_QN、
 ;         PBF_PMASK (0=$1C / 非0=$1E パス)、PBF_PLOFS ($1E)、PBF_DB/DR/DG ($1C)。
-;   A,B,X,U 破壊。
+;   A,B,X,Y,U 破壊。
 pbb_row:
                 LDB     <PBF_PHASE
                 BEQ     prw_np
@@ -6649,7 +6411,7 @@ pbb_row:
                 ADDA    <PBB_CNT
                 STA     <PBB_CNT                ; CNT += phase
                 ASLB                            ; ACC >>= phase は共有シフタ
-                NEGB                            ;   (d_rsh8) への計算入口で (ループ廃止)
+                NEGB                            ;   (d_rsh8) への計算入口で
                 LDX     #d_rsh8+14
                 LEAX    B,X
                 LDD     <PBB_ACC
@@ -6713,7 +6475,6 @@ ppb_1e:
                 LDB     <PBB_EM                 ; U = プレーン実アドレス (行頭で加算済)
                 STB     <PBF_MASK               ; 合成マスク = 端マスク
                 BRA     pb1e_op                 ; 演算指定を適用 (RTS 継承)
-                                                ;   (適用不可は prw_mid へ戻る)
         ENDC
 prw_mid:
                 LDB     <PBB_CNT                ; インライン take(8)
@@ -6781,14 +6542,10 @@ p1o_st:
 
 ;------------------------------------------------------------------------------
 ; prw_fastmid — $1C/$1E 任意幅ブリットの中間バイト高速化 (入口ガード+経路選択)
-;   pbb_row の中間バイトループ (1 出力バイト毎に JSR pbb_fetch/書込ヘルパを回す
-;   汎用 FIFO 経路) を、行内定数シフト k=PBB_CNT のインラインループへ差替える。
-;   行に必要な NB-2 バイトのソースが現チャンク内 (計数・共有 RAM 終端) に揃って
-;   いる場合のみ適用し、それ以外は汎用ループ (prw_mid) へ落ちる。
-;   出力バイト = (直前ソース:現ソース) >> k (k = 行内不変) で、汎用 FIFO が
-;   生成する値と恒等 (FIFO 残量 = 直近消費バイトの下位 k bit、という不変条件)。
-;   入力: A = NB-2 (>0)、U = 中間先頭の B 面 VRAM アドレス、PBB_CNT = k (0..7)。
-;   本体ループは prw_fast_go (別領域)。ここはガードと経路選択のみ。
+;   適用条件を満たすときだけインラインループへ入り、それ以外は汎用ループ (prw_mid) へ落ちる。
+;   入力: A = NB-2 (>0)、U = 中間先頭の VRAM アドレス ($1C は B 面、$1E は対象プレーンの
+;         実アドレス)、PBB_CNT = k (0..7)。
+;   本体ループは prw_fast_go。ここはガードと経路選択のみ。
 ;------------------------------------------------------------------------------
 prw_fastmid:
                 CMPA    <PBS_CNT                ; ソース残量 < NB-2 → 汎用へ
@@ -6862,7 +6619,7 @@ pfm_e_ow:
         ENDC
 
 ;------------------------------------------------------------------------------
-; prw_fast_go — $1C/$1E 中間バイト インラインループ本体 (prw_fastmid から JMP)
+; prw_fast_go — $1C/$1E 中間バイト インラインループ本体 (prw_fastmid から BRA か続けて入る)
 ;   X = ケース別シフトチェーン入口 (pfm_ch_xx+14、ここから k 段ぶん手前へ補正)、
 ;   Y = ソースポインタ、U = 書込先 ($1E はプレーン実アドレス / $1C は B 面基準)、
 ;   PBB_BCNT = 残バイト数。1 バイトの合成は LDD -1,Y (直前:現) → 右 k シフト →
@@ -7097,8 +6854,8 @@ pht_ret:
                 RTS
 
 ;--- pc_home — HOME オーダ (参考書籍) -----------------------------------
-;   バッファアドレスを現在のモード画面の先頭へ移す。画面消去 ($01/$02/$0C/$0D)
-;   の出口でも同じ位置へ戻す。
+;   バッファアドレスをスクロールモード画面の先頭 (WK_WIN_TOP の行の桁 0) へ移す。
+;   画面消去 ($01/$02/$0D) の出口でも同じ位置へ戻す。
 pc_home:
                 CLR     <WK_CURSOR_X
                 LDA     <WK_WIN_TOP
@@ -7114,8 +6871,7 @@ pc_el:
                 PULS    A,B,X,U,PC
 
 ;==============================================================================
-; オーダ (副指令) の追加分 — 参考書籍のオーダ一覧のうち、putchar の
-;   区画で判定していないコードをここで受ける。入口 pc_ord_far から JMP。
+; オーダの残り — putchar が判定しないオーダをここで受ける。入口 pc_ord_far から JMP
 ;   A = オーダコード ($00〜$1F)。呼出元 cmd_03_console の文字数カウンタ (B) と
 ;   文字列ポインタ (X) は壊さないこと。
 ;==============================================================================
@@ -7133,25 +6889,15 @@ pc_ord_ext:
                 CMPA    #$1F
                 BLS     pc_curmove
 pc_noop:
-                RTS                             ; 一覧に無いコードは何も動作しない。
+                RTS                             ; それ以外のコードは何も動作しない。
 pc_bel:
                 TST     >$D403          ; ベルを鳴らす (参考書籍:
                 RTS                     ;   $D403 の読出しの負パルスがブザー)
 
         IFDEF SUBSYS_AV
 ;--- c45_entry — $45 KEYBOARD CONTROL (FM77AV の Type-A / Type-B の位置に置く ROM だけ) ---
-;   並びは参考書籍による。共有 RAM 相対 2 =
-;   コマンドコード $45、相対 3 = 副命令コード (CMD) $00〜$05、相対 4〜5 = パラメータ
-;   (PARAM。副命令ごとに意味が変わり、$00 / $02 / $04 は上位バイト = 相対 4 だけを使う)。
-;   応答は相対 3 = DATA (副命令ごとに意味が変わる)。
-;     $00 キーコード系の設定      (PARAM 上位 $00 JIS9bit / $01 FM16β 準拠 / $02 スキャンコード)
-;     $01 キーコード系の読み取り  (パラメータなし。DATA に上と同じ 3 値)
-;     $02 LED の点灯・消灯        (PARAM 上位 $00 CAP 点灯 / $01 CAP 消灯 / $02 かな 点灯 / $03 かな 消灯)
-;     $03 LED の点灯状態の読み取り (パラメータなし。DATA の bit0 = CAP / bit1 = かな、1 = 点灯)
-;     $04 オートリピートの選択    (PARAM 上位 $00 行う / $01 行わない)
-;     $05 オートリピートの動作時間 (PARAM 上位 = 開始時間 / 下位 = 動作時間。単位 10 ms)
-;       ($05 は上位・下位のどちらかが $00 のとき、キーエンコーダ側が既定の時間
-;        (開始 0.7 秒 / 動作 0.07 秒) を採る。当 ROM は値をそのまま渡す)
+;   相対 3 = 副命令 $00〜$05、相対 4〜5 = パラメータ ($00 / $02 / $04 は相対 4 だけを
+;   使う)。応答は相対 3 (参考書籍)。
 ;   副命令とパラメータをデータレジスタ $D431 へ 1 バイトずつ書き、書くたびに
 ;   ステータスレジスタ $D432 の bit0 (ACK。0 = 応答中) が 1 に戻るまで待つ。
 ;     $00 / $02 / $04 … 2 バイト (副命令 + PARAM 上位)
@@ -7205,10 +6951,9 @@ c45_ack:
 ;   SUBSYS_TB (Type-B の位置): 320×200 の画面の 1 画素の色は B・R・G 各 4 ビットで、
 ;   ビット 3 / 2 / 1 / 0 が処理ページ 0 のオフセット $0000 / 処理ページ 0 のオフセット
 ;   $2000 / 処理ページ 1 の $0000 / 処理ページ 1 の $2000 に置かれた B・R・G の 3 面にある。
-;   直線はラインドロワ ($D420-$D42B) でこの 4 組に 1 回ずつ引く。座標は負を 0、X を 319、
-;   Y を 199 に丸める。
+;   直線はラインドロワ ($D420-$D42B) でこの 4 組に 1 回ずつ引く。座標は描画範囲で切り取る。
 ;   SUBSYS_TB 未定義 (Type-A の位置): 色は 1 バイト (bit0 = B / bit1 = R / bit2 = G) で、
-;   直線はラインドロワで 1 回引く。座標は負を 0、X を 639、Y を 199 に丸める。
+;   直線はラインドロワで 1 回引く。座標は描画範囲で切り取る。
 ;==============================================================================
 IO_ALU_CMD      EQU     $D410   ; ALU の命令 (bit7 = 使う、下位 3 ビット = 演算。0 = PSET / 7 = 比較)
 IO_ALU_COL      EQU     $D411   ; ALU の色 (bit0 = B / bit1 = R / bit2 = G)
@@ -7218,8 +6963,7 @@ IO_ALU_DIS      EQU     $D41B   ; ALU の面の禁止
 IO_LD_BASE      EQU     $D420   ; ラインドロワ: オフセット / 線種 / X0 / Y0 / X1 / Y1 (各 2 バイト)
 IO_AV_MISC      EQU     $D430   ; 書 = bit6 表示ページ / bit5 処理ページ、読 = bit4 ラインドロワの空き / bit2 VSYNC
 AV_MISC         EQU     $D0E7   ; 1: $D430 へ書く値の控え ($22 が更新する)
-AV_PG0          EQU     $D0E8   ; 1: 描画中に $D430 へ書く値 (bit1 を立てる。Type-B の位置は控えの bit5 も落とし、640×200 は $22 の処理ページのまま描く)
-                                ;    bit1・bit0 は $D800 に出す CG のバンクの選択
+AV_PG0          EQU     $D0E8   ; 描画中に $D430 へ書く値
 AV_ALU          EQU     $D0E9   ; 1: 線を引くときの $D410 の値
 AV_STY          EQU     $D0EA   ; 2: 線種 ($D422-$D423)
 AV_COL          EQU     $D0EC   ; 4: 4 回ぶんの $D411 の値 (色のビット 3 → 0 の順)
@@ -7231,7 +6975,6 @@ AV_NP           EQU     4       ; 1 本の線を引く回数
 AV_STY34        EQU     $00FF   ; 形状 3・4 の線種
 G2_ACC          EQU     AV_STY  ; 2: $1D の 1 画素の 12 ビット ($1D は線を引かないので線種の場所を使う)
 G2_ROW          EQU     AV_COL  ; 2: $1D の行の先頭のオフセット
-G2_MASK         EQU     AV_T    ; 1: $1D の画素のビット
 TB_BG           EQU     $D0F3   ; 2: BC (BBBBRRRR GGGG0000)。$01 / $02 / $0D が置く
 TB_FW           EQU     $D0F5   ; 2: 字の色 / 画素の色 (BBBBRRRR GGGG0000)
 TB_BW           EQU     $D0F7   ; 2: 地の色 (同)
@@ -7559,7 +7302,7 @@ avs_3:
 ;--- av_col4 — X が指す色 B,R,G を 4 回ぶんの値に分けて Y の手前 4 バイトへ置く ----
 ;   値の bit0 = B / bit1 = R / bit2 = G。ビット 0 の値から後ろ向きに置く (Y は 4 戻る)。
 ;   X 保存、A/B 破壊。
-av_col4c:                                       ; Y = AV_COL+4 で呼ぶ入口 (4 か所が同じ)
+av_col4c:                                       ; Y = AV_COL+4 で呼ぶ入口
                 LDY     #AV_COL+4
 av_col4:
                 LDD     ,X
@@ -7593,8 +7336,7 @@ av_end:
 
 ;--- av_begin — ALU の面の禁止を解き、描画中の $D430 の値・PSET・実線を用意する ---
 ;--- av_begin_e — 戻り先の下に av_end を積んでから av_begin へ落ちる ----------------
-;   JSR で呼ぶと、呼出元の RTS が av_end ($D430 と ALU の後始末) へ行く。4 か所が
-;   共用する。
+;   JSR で呼ぶと、呼出元の RTS が av_end ($D430 と ALU の後始末) へ行く。
 av_begin_e:
                 PULS    X               ; X = 呼出元への戻り先
                 LDD     #av_end
@@ -7848,34 +7590,30 @@ av_mdiv:
                 BSR     amd_abs                 ; |B1|
                 CMPD    10,S
                 BHI     amd_bad
-                CLRA                            ; 積 = |A1| × |B1| (32 ビット)
-                CLRB
-                STD     ,S
-                LDA     5,S
+                LDA     5,S                     ; 積 = |A1| × |B1| (32 ビット)
                 LDB     13,S
                 MUL
                 STD     2,S                     ; 下位 × 下位
                 LDA     4,S
-                LDB     13,S
-                MUL
-                ADDD    1,S
-                STD     1,S                     ; 上位 × 下位 (8 ビット上へ)
-                BCC     amd_m2
-                INC     ,S
-amd_m2:
-                LDA     5,S
                 LDB     12,S
                 MUL
+                STD     ,S                      ; 上位 × 上位 (16 ビット上へ)
+                LDA     4,S
+                LDB     13,S
+                MUL
+                PSHS    A,B                     ; 上位 × 下位 (以下 2 バイトずれる)
+                LDA     7,S
+                LDB     14,S
+                MUL                             ; 下位 × 上位
+                ADDD    ,S++                    ; 2 つを先に足す (8 ビット上へ入る 17 ビット)
+                BCC     amd_m2
+                INC     ,S                      ; 17 ビット目
+amd_m2:
                 ADDD    1,S
-                STD     1,S                     ; 下位 × 上位
+                STD     1,S
                 BCC     amd_m3
                 INC     ,S
 amd_m3:
-                LDA     4,S
-                LDB     12,S
-                MUL
-                ADDD    ,S
-                STD     ,S                      ; 上位 × 上位 (16 ビット上へ)
                 LDY     #16                     ; 商 = 積 / |C1| (引き戻し法。商は 16 ビットに収まる)
 amd_dv:
                 ASL     3,S
@@ -7904,7 +7642,7 @@ amd_x:
 amd_bad:
                 ORCC    #$01                    ; C=1
                 BRA     amd_x
-;--- amd_abs — U の指すワード (2 バイト) を絶対値にする。D = 絶対値 (Z = 0 のとき) ---------------------
+;--- amd_abs — U の指すワード (2 バイト) を絶対値にする。D = 絶対値 (D = 0 なら Z = 1) ---------------
 amd_abs:
                 LDD     ,U
                 BPL     ama_r
@@ -7916,12 +7654,10 @@ ama_r:
                 RTS
 
         IFDEF SUBSYS_TB
-;--- c_nocode — Type-B の位置に置く ROM が受け付けない命令 ($1B) -------------------
-;   相対 0 に $46 (コマンドコードの誤り) を置く。
+;--- c_e3c — 相対 0 に誤りの番号 $3C を置く ----
 c_e3c:
                 LDA     #$3C                    ; $3C
                 FCB     $8C                     ; 次の LDA #$46 を即値として読み飛ばす
-c_nocode:
                 LDA     #$46
                 JMP     cmd_err
 
@@ -8236,10 +7972,10 @@ t1e_r:
                 ZMB     $FFF0-*
 
                 ; 6809 ベクタ ($FFF0-$FFFF)
-                FDB     reset_entry             ; $FFF0 (Reserved、慣例で RESET と同じに)
         IFDEF SUBSYS_AV
                 ; Type-A / Type-B の位置: 参考書籍のとおり RAM の
                 ;   割込みフックテーブル ($D2A8-) を指す (リセットで JMP を敷く)
+                FDB     hdlr_SWI3       ; $FFF0 (予約。6809 は参照しない。何もしない RTI を指す)
                 FDB     HOOK_TABLE+0    ; $FFF2 SWI3
                 FDB     HOOK_TABLE+3    ; $FFF4 SWI2
                 FDB     HOOK_TABLE+6    ; $FFF6 FIRQ
@@ -8247,6 +7983,7 @@ t1e_r:
                 FDB     HOOK_TABLE+12   ; $FFFA SWI
                 FDB     HOOK_TABLE+15   ; $FFFC NMI
         ELSE
+                FDB     reset_entry             ; $FFF0 (予約。RESET と同じ値を置く)
                 FDB     hdlr_SWI3               ; $FFF2 SWI3
                 FDB     hdlr_SWI2               ; $FFF4 SWI2
                 FDB     hdlr_FIRQ               ; $FFF6 FIRQ

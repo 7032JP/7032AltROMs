@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM 文字列関数の境界: STRING$ の文字コード形式、INSTR の開始位置と端
 2 REM (見つからない 0 / 開始が長さ超え 0 / 相手が空なら開始位置 / 0 以下は誤り 5)、
 3 REM SPACE$ の値域 (0-255)、MID$ の 2 引数形式、LEFT$/RIGHT$ の 0 と長さ超え、

@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM 円弧 (開始位置と終了位置が異なる CIRCLE) に第 7 引数 F を付けると、中心と
 2 REM 弧で囲まれた側だけが塗られる。塗られるのは円周の半分を切り取る弧なら内部の
 3 REM 片側だけなので、向かい合う 2 点のうち点灯するのはちょうど一方になる。

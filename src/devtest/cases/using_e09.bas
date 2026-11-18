@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 PRINT USING "##.##^^^^|";3.25D12
 20 PRINT USING "##.##^^^^|";123456789
 30 PRINT USING "#########.##^^^^|";1.5

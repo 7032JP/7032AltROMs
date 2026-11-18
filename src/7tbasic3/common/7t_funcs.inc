@@ -1,31 +1,23 @@
 ; SPDX-License-Identifier: MIT
 ; Copyright (c) 2026 Naomitsu.Tsugiiwa
 ;==============================================================================
-;==============================================================================
-; ファイル名解析 impl_parse_fname (装置プレフィクス判定を含む) は、
-;   ディスク関連コードと同じ 7t_diskboot.inc に置く。
-;==============================================================================
-
-;==============================================================================
 ; 関数実装 (数値)
 ;==============================================================================
 
 ; SGN(x): x>0 → 1 / x=0 → 0 / x<0 → -1。
-;   本体は ZMB $C000 が吸収するプールへ配置。
 impl_fn_sgn:
                 JSR     eval_p_num
                 JMP     pool_fn_sgn
 
 impl_fn_int:
                 JSR     eval_p_num
-                JMP     pool_fn_int_floor   ; 床関数本体 (空きプールへ配置)
+                JMP     pool_fn_int_floor   ; 床関数本体
 
 impl_fn_abs:
                 JSR     eval_p_num
-                JMP     pool_fn_abs     ; 型を保ったまま符号を落とす (本体はプール)
+                JMP     pool_fn_abs     ; 符号を落とす (整数は単精度へ昇格)
 
 
-; FRE の本体は 7t_float.inc の大文字変換入口の手前に置く。
 
 impl_fn_fix:
                 JSR     eval_p_num
@@ -38,13 +30,14 @@ impl_fn_len:
 
 impl_fn_asc:
                 JSR     eval_p_str
+                LDB     STRLEN
+                LBEQ    errc_5          ; 空文字列は Illegal Function Call (参考書籍)
                 LDX     STRPTR
                 LDB     ,X
                 JMP     int_to_fac_b    ; A=0 を畳んだ入口
 
 impl_fn_cint:
                 JSR     eval_p_num
-                ; 丸め+整数範囲検査 (プール) (ここへ展開)
 ;------------------------------------------------------------------------------
 ; pool_fn_cint — CINT(x): 最近接丸めで整数へ。整数の範囲を外れたら Overflow。
 ;   (動作観察)
@@ -61,22 +54,19 @@ impl_fn_cdbl:
                 JSR     eval_p_num
                 JMP     dbl_widen       ; 単精度/整数を倍精度へ拡張
 
-; PEEK / RND の入口は 7t_vars_print.inc の PSG 初期化入口の手前に置く。
 
 ; impl_fn_varptr: VARPTR(変数) — 変数の値が格納されている RAM 上の先頭アドレスを返す。
-;   参考書籍記載のとおり、配列要素 VARPTR(A%(i)) は当該要素の格納
-;   アドレス、スカラ VARPTR(V) はその変数の値領域先頭アドレスを返す。機械語や
-;   LOADM/SAVEM のアドレス引数 (LOADM"f",VARPTR(A%(0))+ofs 等) で多用される。
+;   配列要素なら要素のアドレス、スカラなら値領域の先頭を返す。
 ;   入力: X = VARPTR トークン直後 (先頭が '(')
 ;   出力: FAC1 = アドレス, fn_xsave = 引数 (閉じ括弧) の直後
 impl_fn_varptr:
                 JSR     skip_sp_lparen
                 BNE     ifvp_noparen
                 LEAX    1,X             ; VARPTR 開き括弧 '(' をスキップ
-                JSR     impl_get_var_ref ; U = 変数値アドレス
-                ; impl_get_var_ref は配列なら X を配列の ')' 直後へ進めるが、
-                ; スカラでは X を名前先頭へ戻す。VARPTR の閉じ括弧へ確実に
-                ; 到達するため、現在位置から括弧の対応を取りつつ ')' を探す。
+                JSR     get_var_ref_chk ; U = 変数値アドレス
+                ; impl_get_var_ref は配列なら X を配列の ')' 直後へ、スカラなら
+                ; 名前の直後へ進める。VARPTR の閉じ括弧へ確実に到達するため、
+                ; 現在位置から括弧の対応を取りつつ ')' を探す。
                 CLRB              ; B = 括弧ネスト深さ
 ifvp_scan:
                 LDA     ,X
@@ -108,7 +98,7 @@ ifvp_noparen:
                 STX     fn_xsave
                 JMP     int_to_fac_zero         ; FAC1 = 0
 
-; LOF / EOF: 開いているファイルが無いので 0 を返す。
+; LOF / EOF: 常に 0 を返す。
 impl_fn_lof:
 impl_fn_eof:
                 JSR     impl_eval_expr_p
@@ -118,7 +108,6 @@ impl_fn_eof:
 ; 文字列関数
 ;==============================================================================
 
-; >>FOLD ret_tmpstr1
 ;------------------------------------------------------------------------------
 ; ret_tmpstr1 — TMPSTR の 1 文字を文字列の返り値にして関数の共通尾部へ抜ける。
 ;   CHR$ と INKEY$ の共通の尾部。
@@ -129,26 +118,25 @@ ret_tmpstr1:
                 LDA     #1
                 STA     STRLEN
                 BRA     fret_str        ; (短分岐が届く)
-; <<FOLD ret_tmpstr1
 impl_fn_chr_d:
                 JSR     eval_p_to_int_255 ; 0..255 検査つき整数化 (範囲外は ERR 5 / 桁あふれは ERR 6)
                 STB     TMPSTR
                 BRA     ret_tmpstr1     ; TMPSTR の 1 文字を返す (共通化)
 
 ; impl_fn_str_d: STR$(n) — 数値を文字列に変換
-; 逆向きに桁を格納し、STRPTR はバッファ内の先頭桁を指す
+; 逆向きに桁を格納し、STRPTR はバッファ内の先頭 (符号か空白) を指す
 ; 単精度は PRINT と同じ整形 (print_float) を putchar 捕捉で流用する
 impl_fn_str_d:
                 JSR     eval_p_num
                 LDA     FACTYPE
                 BEQ     ifsd_int
-                JMP     pool_str_float      ; 単精度経路 (空きプールへ配置)
+                JMP     pool_str_float      ; 単精度経路
 ifsd_int:
                 JSR     impl_fac_to_int
 ; int_to_str: D(符号付き16bit) を 10進文字列に変換し RAM バッファへ。
 ;   STR$ 仕様に従い正/0 は先頭に空白、負は '-' を付す。
-;   桁はバッファ末尾から逆順に書き、STRPTR=先頭桁, STRLEN=桁数+符号。
-;   RAM バッファ str_conv_buf ($0600-) を使う (ROM は書込不可のため)。
+;   桁はバッファ末尾から逆順に書き、STRPTR=先頭 (符号か空白), STRLEN=桁数+符号。
+;   RAM バッファ str_conv_buf を使う。
 int_to_str:
                 BSR     int_to_str_raw
                 BRA     fret_str
@@ -197,8 +185,7 @@ its_finish:
 
 ; uint_digits — D (符号なし 16bit) の 10 進の桁を str_conv_buf の末尾から逆順に
 ;   書く。出力: X = 先頭桁のアドレス。破壊: A,B,U。
-;   綴りを作る経路 (STR$ / PRINT の項目整形) と、10 進をそのまま出す経路
-;   (print_uint16) が同じ 1 本を使う (同じ桁分解を 2 か所に置かない)。
+;   綴りを作る経路 (STR$ / PRINT の項目整形) と print_uint16 が共用する。
 uint_digits:
                 LDX     #str_conv_buf+8 ; 末尾から書く
                 ADDD    #0              ; D = 0 か (CMPD #0 と同じフラグで 1 バイト短い)
@@ -228,9 +215,7 @@ ud_div10_done:
 
 ; fret_str: 文字列型を返す関数群の共通尾部 (FACTYPE=3 を立てて復帰)。
 fret_str:
-                ; 結果は必ず一時領域へ複写して所有する。固定の出力緩衝を
-                ;   1 個しか持たないままだと、同じ関数を 2 回使ったときに先の
-                ;   結果が後の結果で書き潰される (CHR$(65)+CHR$(66) が "BB")。
+                ; 結果は一時領域へ複写して所有する。
                 JSR     str_to_tmp
 fret_str_own:
                 LDA     #3
@@ -239,28 +224,33 @@ fret_str_own:
 
 impl_fn_val:
                 JSR     eval_p_str
-                ; STRPTR の文字列を数値に変換する。impl_parse_num は終端文字で
-                ; 停止する方式のため、そのままでは文字列長 (STRLEN) の範囲外まで
-                ; 読み足してしまう (文字列の直後のバイトが数字だと、それまで
-                ; 数値の一部として解析する)。
-                ; 末尾の次の 1 バイトを一時的に $00 (終端) へ置き換えてから解析し、
-                ; 解析後に元の値へ復元する。対象は本文/文字列域 (RAM) に限られる。
+                PSHS    U
+                TFR     S,U             ; U = 写しの上の端 (読み終えたら S をここへ戻す)
+                LDB     STRLEN
+                JSR     chk_stack_b     ; 写しの分の空きが無ければ Out Of Memory
                 LDX     STRPTR
                 LDB     STRLEN
-                ABX                     ; X = 文字列末尾の次
-                LDA     ,X
-                PSHS    A,X             ; 元バイトとアドレスを退避
-                CLR     ,X              ; 一時終端
-                LDX     STRPTR
+                ABX                     ; X = 文字列の終わりの次
+                CLR     ,-S             ; 写しの終わりの 0
+                LSRB                    ; 長さが奇数なら終わりの 1 字を先に積む
+                BCC     fv_cp
+                LDA     ,-X
+                PSHS    A
+fv_cp:
+                CMPX    STRPTR          ; 残りは 2 字ずつ
+                BEQ     fv_read
+                LDD     ,--X
+                PSHS    D
+                BRA     fv_cp
+fv_read:
+                TFR     S,X             ; X = 写しの先頭
                 JSR     impl_parse_num
-                PULS    A,X
-                STA     ,X              ; 元バイトを復元
-                RTS
+                TFR     U,S
+                PULS    U,PC
 
 impl_fn_hex_d:
                 JSR     eval_p_to_addr ; 16 進表記はアドレスと同じ規約 (-65536..65535)
                 ; 値 D を保持しつつ 4 桁の 16 進を hex_buf[3..0] へ最下位から書く。
-                ; 注意: hex_cnt 初期化で A(=D 上位) を壊さないよう、先に値を退避する。
                 PSHS    D               ; 値を一時退避
                 LDX     #hex_buf+4      ; 末尾の次。格納前に 1 バイト戻す
                 LDA     #4
@@ -357,9 +347,7 @@ eval_int_keep:
 
 
 impl_fn_space_d:
-                ; 文字数は 0..255。負や 256 以上は Illegal Function Call であり、
-                ; 下位バイトだけを採って黙って生成してはならない。丸めは最近接
-                ; (参考書籍の整数変換規約。SPACE$(2.6) は 3 文字)。
+                ; 文字数は 0..255、範囲外は Illegal Function Call。丸めは最近接 (参考書籍)。
                 JSR     eval_p_to_int_255
                 ; SPACE$(n) は STRING$(n," ") と同じ生成なので、固定緩衝を
                 ;   持たずに STRING$ の生成部を共用する。
@@ -370,9 +358,8 @@ impl_fn_space_d:
 
 ; STRING$(n, c) : 文字 c を n 回繰り返した文字列。c は文字コード(数値)または
 ;   文字列(先頭1文字を使用)。引数は ( 数式 , 式 ) の 2 引数。
-;   繰返し数は第 2 引数の式評価を跨いで生きるため、DP 一時ではなくハードウェア
-;   スタックへ置く (DP 一時は FAC2 の内側で、式評価で必ず壊れる)。埋め文字
-;   mid_len($5F) は最後の式評価より後にだけ書くので DP のままでよい。
+;   繰返し数は第 2 引数の式評価を跨いで生きるため、ハードウェアスタックへ置く。
+;   埋め文字 mid_len は最後の式評価より後にだけ書く。
 impl_fn_strng_d:
                 JSR     eval_to_int_255_ac
                 PSHS    B               ; 繰り返し数 (0-255) を退避
@@ -385,9 +372,7 @@ impl_fn_strng_d:
                 STB     mid_len         ; 埋め文字コード
                 BRA     fstr_fill_init
 fstr_from_str:
-                ; 文字列先頭の参照は U で行う (X=STRPTR に載せ替えると、
-                ;   fstr_fill_init の「')' 消費」が文字列内容に対して行われ、
-                ;   本文ポインタを失う)。
+                ; 文字列先頭の参照は U で行う (X は本文ポインタのまま保つ)。
                 LDU     STRPTR
                 LDA     ,U              ; 文字列の先頭 1 文字
                 STA     mid_len
@@ -415,8 +400,7 @@ fstr_fdone:
                 JMP     fret_str_own
 
 ; LEFT$(s$, n): 文字列 s$ の先頭 n 文字。
-;   引数は ( 文字列式 , 数式 ) の 2 引数。eval_expr_p は単一引数用で
-;   ',' を ')' と誤認するため、ここで '(' / ',' / ')' を手動処理する。
+;   引数は ( 文字列式 , 数式 ) の 2 引数 (fn_str_num_args で読む)。
 impl_fn_left_d:
                 BSR     fn_str_num_args ; STRPTR/STRLEN=文字列, B=数値
                 ; STRLEN = MIN(B, STRLEN)
@@ -428,30 +412,25 @@ fleft_ok:
 
 impl_fn_right_d:
                 BSR     fn_str_num_args
-                ; 末尾 B 文字: 開始 = STRLEN - B (負なら全部)
-                PSHS    B
-                LDA     STRLEN
-                SUBA    ,S+
-                BPL     fright_ok
-                CLRA                    ; B>=STRLEN → 全部
-fright_ok:
-                LDX     STRPTR
-                LEAX    A,X
-                STX     STRPTR
-                ; 新 STRLEN = STRLEN - 開始オフセット
-                NEGA
-                ADDA    STRLEN
+                ; 末尾 B 文字。B が文字列の長さ以上なら全体を返す
+                CMPB    STRLEN
+                BHS     fleft_ok
+                TFR     B,A             ; A = 新しい長さ
+                NEGB
+                ADDB    STRLEN          ; B = 開始位置 = 長さ - 文字数 (1〜255)
                 STA     STRLEN
+                LDX     STRPTR
+                ABX
+                STX     STRPTR
                 JMP     fret_str
 
 ; MID$(s$, start [, len]) : start は 1-origin。
-;   開始位置は第 3 引数の式評価を跨いで生きるため、DP 一時ではなくハードウェア
-;   スタックへ置く (DP 一時 $5E/$5F は FAC2 の内側にあり、式評価が必ず壊す)。
-;   要求長 mid_len は最後の式評価より後にだけ書くので DP のままでよい。
+;   開始位置は第 3 引数の式評価を跨いで生きるため、ハードウェアスタックへ置く。
+;   mid_len は FAC2 の内側にあるので、最後の式評価より後にだけ書く。
 impl_fn_mid_d:
                 JSR     eval_x_str_ac
                 LDA     ,X+             ; ','
-                JSR     eval_int_keep   ; 整数化。文字列レジスタは保つ
+                BSR     eval_int_keep   ; 整数化。文字列レジスタは保つ
                 PSHS    B               ; 開始 (1-origin) を退避
                 ; 長さ指定?
                 JSR     chk_comma_x     ; A=,X を読み ',' と比較 (共通化)
@@ -504,9 +483,6 @@ fn_str_num_args:
                 PSHS    B
                 LDA     ,X+             ; ')'
                 STX     fn_xsave        ; 引数直後を確定 (式プライマリが復元する)
-                ; fn_xsave 未更新だと式プライマリが古い fn_xsave へ本文
-                ;   ポインタを巻き戻し、PRINT LEFT$(A$,2);"X" の後続項 "X" が
-                ;   失われる。
                 PULS    B,PC
 
 ; INSTR([開始位置,] haystack$, needle$) : needle$ が haystack$ 内に開始位置
@@ -521,13 +497,13 @@ impl_fn_instr:
                 JSR     pool_instr_arg1 ; B = 開始オフセット(0起点), STRPTR/STRLEN = haystack$
                 PSHS    B               ; [i0]
                 LDD     STRPTR
-                PSHS    D               ; [hPlo][hPhi]  (S+0=hi,S+1=lo の順)
+                PSHS    D               ; [hPhi][hPlo]  (S+0=hi,S+1=lo の順)
                 LDA     STRLEN
                 PSHS    A               ; [hLen]
                 JSR     eval_x_str_ac
                 LDA     ,X+             ; ')'
                 STX     fn_xsave        ; 引数直後を確定 (式プライマリが復元する)
-                ; needle 空なら 1
+                ; needle 空なら開始位置
                 LDA     STRLEN
                 BNE     fins_search
                 LEAS    3,S             ; haystack 退避を捨てる (0,S = i0)
@@ -573,9 +549,7 @@ fins_notfound:
                 JMP     int_to_fac_zero         ; FAC1 = 0
 
 impl_fn_inkey_d:
-                ; 引数なし関数は fn_xsave (関数評価が復帰後に復元) を更新しないと
-                ; 前の関数呼出の古い値へ本文ポインタが飛び、同一行の後続文 (: 以降)
-                ; が読み飛ばされる (TIME$/DATE$ と同規約)。
+                ; 引数なし関数も fn_xsave を更新する (TIME$/DATE$ と同規約)。
                 STX     fn_xsave
                 JSR     impl_sub_inkey
                 TSTA
@@ -590,13 +564,15 @@ iik2_none:
 
 ; INPUT$(文字数[,[#]ファイル番号]) — 参考書籍。
 ;   文字数は 0〜255。キーボードから指定の文字数だけ受け取る (画面に表示しない。
-;   コントロール文字もそのまま取り込む。BREAK キーは中断)。ファイル番号を書いた
-;   ときは、開いているファイルが無いので File Not Open。
+;   コントロール文字もそのまま取り込む。BREAK キーは中断。コード 0 のキーは
+;   未入力として扱う)。ファイル番号を書いたときは File Not Open。
 impl_fn_input:
+                JSR     impl_expect_tok
+                FCB     '$'
                 JSR     impl_expect_tok
                 FCB     '('
                 JSR     eval_to_int_255 ; B = 文字数 (範囲外は Illegal Function Call)
-                PSHS    B
+                PSHS    B               ; 0,S = 求める文字数
                 JSR     skip_sp_comma
                 BNE     fip_close
                 LDB     #59             ; File Not Open
@@ -605,31 +581,30 @@ fip_close:
                 JSR     impl_expect_tok
                 FCB     ')'
                 STX     fn_xsave
-                LDX     #str_work_buf   ; 取込先
+                PULS    B
+                STB     STRLEN          ; 結果の長さと置き場を先に決める
+                LDX     #str_work_buf
+                STX     STRPTR
 fip_lp:
-                TST     ,S
-                BEQ     fip_done
+                TFR     X,D
+                SUBD    STRPTR          ; B = 置いた文字数
+                CMPB    STRLEN
+                BEQ     fip_done        ; 求める長さに届いた
 fip_wait:
-                JSR     brk_gate        ; BREAK キーは中断 (X 温存)
+                JSR     brk_poll        ; BREAK キーは中断 (X 温存)
+                LBNE    brk_stop
                 JSR     impl_sub_inkey  ; A = 文字 (0 = 未入力)
                 TSTA
                 BEQ     fip_wait
                 STA     ,X+
-                DEC     ,S
                 BRA     fip_lp
 fip_done:
-                PULS    B
-                STB     STRLEN
-                LDD     #str_work_buf
-                STD     STRPTR
                 JMP     fret_str
 
-; impl_fn_time / impl_fn_date は 7t_time.inc に置く。
 
 
 
-; CIRCLE 頂点角の sin 定数表 前半 (j=0..8)。自前 sin コア
-;   (fx_sin_core) の実出力ビット列。詳細は 7t_save_list.inc cpg_lp を参照。
+; CIRCLE 頂点角の sin 定数表 前半 (j=0..8)。
 c_sjtab9:
                 FCB     $00,$00,$00,$00,$00,$00 ; j=0 (sin 0 = 0)
                 FCB     $7C,$C8,$BD,$35,$E1,$00 ; j=1

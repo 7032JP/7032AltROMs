@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM TIME$ / DATE$ の設定と参照 (設定した値を読み返す)。DATE$ は YY/MM/DD。
 2 REM 何も押していないときの INKEY$ は長さ 0。
 10 TIME$="12:34:56":PRINT TIME$

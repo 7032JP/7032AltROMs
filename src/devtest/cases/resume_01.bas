@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM RESUME (引数なし) の再開位置は誤りが起きた文の先頭。IF~THEN の節は
 2 REM 切れ目に数えないので IF の条件判定からやり直す。: で区切った行は
 3 REM : の直後からやり直す。

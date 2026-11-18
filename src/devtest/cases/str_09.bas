@@ -1,0 +1,7 @@
+0 REM AltROMs test (MIT)
+1 REM RIGHT$ を 128 文字以上の文字列に使う: 末尾から数えた文字が返る。
+10 CLEAR 2000
+20 A$=STRING$(200,"A")+"XYZ"
+30 PRINT RIGHT$(A$,3);LEN(RIGHT$(A$,150));LEN(RIGHT$(A$,250))
+40 B$=STRING$(130,"B")+"Q"
+50 PRINT RIGHT$(B$,1);LEN(RIGHT$(B$,129));LEFT$(RIGHT$(B$,2),1);LEN(RIGHT$(B$,0))

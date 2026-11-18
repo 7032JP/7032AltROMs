@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM CIRCLE の第 4 引数 (縦横比)。横の半径は指定した半径のままで、縦の半径は
 2 REM 半径×縦横比になる。縦横比 1 の真円と縦横比 0.5 の楕円を、横と縦の頂点で
 3 REM 見分ける。値を書かない空の引数 (,,) は既定値の指定と同じ扱いになる。

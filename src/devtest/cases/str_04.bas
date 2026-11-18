@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 PRINT INSTR("ABCDEF","CD")
 20 PRINT HEX$(255)
 21 PRINT HEX$(4096)

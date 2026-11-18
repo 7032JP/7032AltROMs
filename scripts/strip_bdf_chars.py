@@ -4,25 +4,10 @@
 """
 入力 BDF から指定の符号位置を取り除いて改変した BDF を作る変換ツール。
 
-本リポジトリが同梱する fonts/shinonome/shnmk16.bdf は、東雲フォントファミリー
-16 ドット漢字ゴシック体の配布物の BDF から、本ツールで 107 符号位置の CHAR
-レコードを取り除いて**改変したもの**である。取り除く符号位置は
-scripts/kanji_glyph_overrides.py が独自字形を定義する 107 符号位置と同一で、
-配布物の AUTHORS が「X11 標準の jiskan16 フォントからそのまま使わせていただ
-いている文字のリスト」として 16 ドット節に列挙する 107 字に対応する。
-
-同梱の改変した BDF はこの 107 符号位置に字形を持たない。ROM を組み立てる
-scripts/genkanji.py が当該 107 符号位置へ scripts/kanji_glyph_overrides.py の
-独自字形を適用する (docs/LEGAL.md §9.2)。
-
-リポジトリには改変した BDF だけを置く。配布物そのもの (アーカイブ・無改変の BDF) は
-同梱しない。第三者が同じ改変結果を再現・検証したい場合は、docs/LEGAL.md §10 に
-掲げた取得元 URL から配布物を取得し、その BDF を入力に本ツールを実行すればよい。
-入力と出力の両方について SHA-256 を表示するので、fonts/shinonome/UPSTREAM_SHA256SUMS
-(配布物側) と fonts/SHA256SUMS (同梱の改変した BDF) の値と突き合わせられる。
-
-同じ入力から何度実行しても同じバイト列が得られる (決定的)。ネットワーク接続は
-不要である。
+同梱の fonts/shinonome/shnmk16.bdf は、配布物の BDF から
+scripts/kanji_glyph_overrides.py が字形を定める 107 符号位置を取り除いた改変物である
+(docs/LEGAL.md §9.2・§10)。入力と出力の SHA-256 を表示するので、
+fonts/shinonome/UPSTREAM_SHA256SUMS と fonts/SHA256SUMS の値と突き合わせられる。
 
 使い方:
 

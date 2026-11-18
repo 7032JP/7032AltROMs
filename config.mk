@@ -28,12 +28,9 @@ SRC    = src
 # フォント生成スクリプト
 SCRIPTS = scripts
 
-# 配布物 (本リポジトリ一式) のバージョン
-#   **BASIC インタプリタ本体のバージョン (7T-BASIC 3.1) とは別の採番である。**
-#   配布物のバージョンは独立して採番する。
-#   7T-BASIC のバージョンは 3.1 のままで、こことは連動しない (src/7tbasic3/ 側が持つ)。
+# 配布物のバージョン
 #   公開時のタグ名は "v$(DIST_VERSION)" を想定する。
-DIST_VERSION = 1.0.10
+DIST_VERSION = 1.0.11
 
 # 第三者のビットマップフォント (パブリックドメイン宣言つき) の同梱先
 #   16x16 漢字フォント ROM の字形の入力に用います (docs/LEGAL.md §9)。
@@ -57,13 +54,10 @@ FONTS = fonts
 #     7tbasic3 : 7T-BASIC 3.1 (BASIC インタプリタ本体) (31744 B)
 TARGETS = boot_bas boot_dos subsys_c initiate initbase initav1 initex subsys_a subsys_b subsyscg extsub 7tbasic3
 
-# データ ROM 一覧 (コードを持たないデータ ROM。上の TARGETS とは由来の区分が違う)
+# データ ROM 一覧 (コードを持たないデータ ROM)
 #   kanji  : 16x16 漢字フォント ROM 第一水準 (131072 B)
 #   kanji2 : 16x16 漢字フォント ROM 第二水準 (131072 B)
-#            上の 2 本は、パブリックドメイン宣言つきで配布されている第三者の
-#            ビットマップフォント (fonts/) の字形を、本プロジェクトの配置規則で
-#            並べ替えたものです。字形の出所と権利区分は docs/LEGAL.md §9 に
-#            記載します (配置規則の実装と生成スクリプトは MIT)。
+#   上の 2 本の字形の入力は fonts/ の BDF (docs/LEGAL.md §9)。
 #   dicrom : 辞書 ROM (262144 B)。所定サイズを供給する枠 (全域 0x00)。
 #            かな漢字変換 (日本語入力) は非対応です (docs/COMPATIBILITY.md)。
 DATA_TARGETS = kanji kanji2 dicrom

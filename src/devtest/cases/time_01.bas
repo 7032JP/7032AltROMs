@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM ON TIME GOSUB / TIME "hh:mm:ss" / TIME ON: 時計を合わせ、割込予約時刻を
 2 REM 決めて許可すると、その時刻に登録行へ GOSUB として入る。RETURN に行番号を
 3 REM 書けばその行から再開する。TIME OFF の間は割込まない。

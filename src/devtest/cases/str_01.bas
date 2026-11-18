@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 A$="VIVA 68B09E!"
 20 PRINT LEN(A$)
 30 PRINT LEFT$(A$,7)

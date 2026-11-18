@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 ON ERROR GOTO 100
 20 READ A$,B$,C$
 30 PRINT "[";A$;"][";B$;"][";C$;"]";LEN(B$)

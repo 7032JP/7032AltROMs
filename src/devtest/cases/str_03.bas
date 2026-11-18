@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 A$="ABCDEFG":B$=""
 20 FOR I=LEN(A$) TO 1 STEP -1
 30 B$=B$+MID$(A$,I,1)

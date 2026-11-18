@@ -1,3 +1,3 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 PRINT 3>2, 3<2, 3=3, 3<>4
 20 PRINT "ABC"="ABC", "ABC"<"ABD"

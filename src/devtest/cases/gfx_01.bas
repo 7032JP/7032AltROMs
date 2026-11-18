@@ -1,5 +1,5 @@
-0 REM AltROMs test - MIT, own work.
-1 REM GET@/PUT@ 形式3/4 (書式指定子 G つき): 図形を配列へ取り込み、画面を消して
+0 REM AltROMs test (MIT)
+1 REM GET@/PUT@ (書式指定子 G つき): 図形を配列へ取り込み、画面を消して
 2 REM から別の位置へ戻すと、元の画素が復元される。POINT (真=-1/偽=0) で確認する。
 10 CLS
 20 DIM P%(100)

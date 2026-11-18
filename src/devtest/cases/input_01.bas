@@ -1,7 +1,7 @@
-0 REM AltROMs test - MIT, own work.
-1 REM INPUT (18) はデータバッファ長 (RCBBMH) を越えて書かない。RCBBMH = 6 の
+0 REM AltROMs test (MIT)
+1 REM INPUT (18) はデータバッファ長 (制御ブロック +6・+7) を越えて書かない。長さ 6 の
 2 REM バッファの後ろを &H5A で染め、入力の後も変わらないことを見る。
-3 REM +0 = 終了コード、+1 = &H12、RCBLNH = 終了コードを除いたバイト数。
+3 REM +0 = 終了コード、+1 = &H12、データバイト数 (+4・+5) = 終了コードを除いたバイト数。
 10 FOR I=0 TO 14:READ B:POKE &H6000+I,B:NEXT
 20 FOR I=0 TO 15:POKE &H6110+I,90:NEXT
 30 POKE &H6100,18:POKE &H6101,255:POKE &H6102,&H61:POKE &H6103,&H10:POKE &H6104,0:POKE &H6105,0:POKE &H6106,0:POKE &H6107,6

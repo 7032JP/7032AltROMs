@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM 変数名は先頭 16 文字が有意。17 文字目だけが異なる名前は同じ変数で、
 2 REM 16 文字目までに違いがある名前は別の変数。
 10 COUNTERVALUEXYZ1A=7:COUNTERVALUEXYZ2=9

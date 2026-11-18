@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 N=3:F=1:T=3:V=2:GOSUB 100:END
 100 IF N=0 THEN RETURN
 110 N=N-1

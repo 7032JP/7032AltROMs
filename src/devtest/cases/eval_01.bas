@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 PRINT 1+2*3
 20 PRINT (1+2)*3
 30 PRINT 10-2-3

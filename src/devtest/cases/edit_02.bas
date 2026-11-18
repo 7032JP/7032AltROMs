@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 PRINT "A1"
 20 PRINT "B1"
 30 PRINT "C1"

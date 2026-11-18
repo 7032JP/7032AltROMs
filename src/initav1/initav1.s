@@ -4,7 +4,7 @@
 ; AltROMs initav1.rom — FM77AV 第 1 世代 メイン CPU イニシエータ ROM
 ;
 ; 8192 byte 固定。initiate.rom / initbase.rom と同じメイン CPU イニシエータ ROM
-; だが、**起動機構そのものが異なる世代** 向けの変種である。
+; だが、起動機構そのものが異なる世代向けの変種である。
 ;
 ; 本変種の構成差 (initiate.rom との差):
 ;   1. AV ブートイメージを持たない (file offset $1C00 は空き)。

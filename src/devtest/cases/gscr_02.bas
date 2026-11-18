@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM 画面比較: LINE の各形式。始点省略 (-(X,Y) は前回の点から)、B (枠)、
 2 REM BF (塗り箱)、PRESET (背景色で消す)、縦線。
 10 CLS

@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 ON ERROR GOTO 100
 20 INPUT A
 30 PRINT "GOT";A

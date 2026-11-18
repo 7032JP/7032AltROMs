@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM INTERVAL / ON INTERVAL GOSUB: 設定した間隔 (秒) ごとに登録行へ GOSUB
 2 REM として入り RETURN で戻る。OFF で禁止。引数の誤り: 0 は誤り 5、
 3 REM 引数なしは誤り 22、2 個は誤り 2、ON INTERVAL GOTO は誤り 2。

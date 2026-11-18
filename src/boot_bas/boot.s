@@ -8,15 +8,15 @@
 ; 動作 (参考書籍):
 ;   $FE00 → 割込マスク、S・DP 設定 → BREAK キー ON ($FD04 bit1 = 0) なら BASIC ホット
 ;   スタート → ディスクが無い ($FD05 bit0 EXTDET) なら BASIC コールドスタート (A = 0)
-;   → ドライブ 0 のモータ ON → READY になるまで RESTOR を出し直す (上限約 2 秒)
+;   → ドライブ 0 のモータ ON → READY になるまで RESTOR を出し直す (上限 READY_TRIES 回)
 ;   → RESTOR → トラック 0 セクタ 1 を $0100 へ DREAD → エラーなら RESTOR からやり直し、
 ;   5 回失敗で BASIC コールドスタート (A = 0) → 成功なら DP = 0 で $0100 へ。
 ;   どの経路でも、飛ぶ前に RS-232C の制御レジスタ ($FD07 / $FD25 / $FD27 / $FD29 /
-;   $FD2B) を初期化する (ctl_init。参考書籍)。
+;   $FD2B) を初期化する (ctl_init。参考書籍。STAGE_ALT_RAM を定義した構成では通らない)。
 ;
 ; BASIC の飛び先:
-;   当方の BASIC ROM (7tbasic3) は目印 "7T" ($FBF4) と起動ベクタ ($FBF6 コールド /
-;   $FBF8 二次) を置く。目印があればそのベクタを、無ければ参考書籍に載る入口を使う。
+;   当方の BASIC ROM (7tbasic3) は目印 "7T" ($FBF4) と起動ベクタ ($FBF6 = BREAK キー ON の
+;   とき / $FBF8 = ディスク起動の不成立のとき) を置く。目印があればそのベクタを、無ければ参考書籍に載る入口を使う。
 ;
 ; ディスク BIOS:
 ;   $FE02 RESTOR / $FE05 DWRITE / $FE08 DREAD (参考書籍)。X = RCB で
@@ -28,7 +28,7 @@
 
 ; --- BASIC の起動ベクタ (当方の BASIC ROM が置く) ---
 BASVEC_SIG      EQU     $FBF4           ; 目印 ("7T")
-BASVEC_COLD     EQU     $FBF6           ; +0 = コールド入口 / +2 = 二次入口 (A = 0)
+BASVEC_COLD     EQU     $FBF6           ; +0 = BREAK キー ON のとき / +2 = ディスク起動の不成立のとき (A = 0)
 ; --- 目印が無いときの飛び先 (参考書籍) ---
                 IFNDEF  STAGE_ALT_RAM
 BASIC_HOT       EQU     $8684           ; ホットスタート (BREAK キー ON)
@@ -57,18 +57,14 @@ ERR_NOTREADY    EQU     10              ; ドライブノットレディ
 ERR_TIMEOVER    EQU     15              ; タイムオーバーエラー
 
 ; --- データ待ちの上限 ---
-;   LSI は読み書きの指令を受けるとレコードを探して媒体を 5 回転ぶん見る (毎分 300
-;   回転で約 1 秒)。その間は DRQ も INTRQ も来ない。待ちが探索の窓より短いと、
-;   媒体に無いセクタを読んだときに必ず 15 (待ち切れ) になり、参考書籍の
-;   12 (ハードエラー = レコードノットファウンド) を返せない。そこで内側の繰り返し
-;   ($8000 周) を DATA_WAIT_OUT 回まで繰り返し、探索の窓より長く待つ。正常な転送では
-;   内側の繰り返しが尽きないので、読み書きの速さは変わらない。
+;   データ待ちの上限 (内側 $8000 周 × DATA_WAIT_OUT)。
 DATA_WAIT_OUT   EQU     4
 
 ; --- READY 待ち ---
 ;   モータ ON の直後の RESTOR はドライブノットレディ (10) で戻る。回転が安定するまでの
 ;   時間は決め打ちにせず、SPIN_WAIT_N 回の空回し (8 サイクル/回) を挟んで RESTOR を
-;   出し直し、正常に戻るまで READY_TRIES 回まで繰り返す (合計で約 2 秒が上限)。
+;   出し直し、正常に戻るまで READY_TRIES 回まで繰り返す (空回しだけで 2 MHz で約 1.2 秒。RESTOR の
+;   中の完了待ちの分が加わる)。
 READY_TRIES     EQU     24
 SPIN_WAIT_N     EQU     $3000
 CTL_RESET       EQU     $40             ; RS-232C 等の制御レジスタへ最後に書く値 (内部リセット)
@@ -119,7 +115,7 @@ reset_init:     ORCC    #$50            ; IRQ/FIRQ マスク
                 ; --- ドライブ 0 のモータ ON → READY になるまで RESTOR を出し直す ---
                 ;   モータ ON の直後はドライブが READY でなく、RESTOR は 10 (ドライブノット
                 ;   レディ) で戻る。少し待って RESTOR を出し直し、正常に戻るまで繰り返す
-                ;   (上限 READY_TRIES 回 = 約 2 秒)。上限に達したら (ディスクが無い等)
+                ;   (上限 READY_TRIES 回)。上限に達したら (ディスクが無い等)
                 ;   そのまま次の段へ進み、そこで読めないことが確定する。
                 LDA     #$80
                 STA     <FDC_MOTOR_DRV
@@ -139,14 +135,14 @@ rb_retry:       LDX     #restor_rcb
                 BEQ     rb_ok
                 DEC     ,S              ; 残り回数
                 BNE     rb_retry
-rb_fail:        LDB     #2              ; +2 = コールドスタート
+rb_fail:        LDB     #2              ; +2 = ディスク起動の不成立
                 BRA     rb_vec
-rb_break:       CLRB                    ; +0 = ホットスタート
+rb_break:       CLRB                    ; +0 = BREAK キー ON
 rb_vec:         JSR     basic_vec
                 BRA     rb_go
 rb_ok:          LDX     #IPL_ADDR
                 IFNDEF  STAGE_ALT_RAM
-                LDY     #$0500          ; IPL へ渡す Y = $0500 (バイト数)
+                LDY     #$0500          ; IPL へ渡す Y = $0500
                 ENDC
 rb_go:          LEAS    1,S             ; 残り回数の枠を捨てる (S を初期値に戻す)
                 JSR     ctl_init        ; RS-232C 等の制御レジスタの初期化 (X・Y は保つ)
@@ -176,9 +172,8 @@ dread_rcb:      FCB     $0A,$00,$01,$00,$00,$01,$00,$00 ; DREAD: $0100 へ、ト
 ;   割込: 本体の実行中は IRQ/FIRQ をマスクし、復帰時に
 ;         呼出時の状態へ戻す。
 ;   BIOS は再試行しない (参考書籍)。再試行は呼出側の責務。
-;   リクエスト番号の検査は BIOS の入口が済ませて
-;   いる。処理アドレスは、どの処理かが入口の側で決まった後の分岐先なので、ここで番号を
-;   検査し直さない。RCB+0 は $08 = RESTOR / $09 = DWRITE / それ以外 = DREAD と読む。
+;   リクエスト番号は検査しない (呼ぶ側が正しい番号を置く前提)。RCB+0 は $08 = RESTOR /
+;   $09 = DWRITE / それ以外 = DREAD と読む。
 ;   エラー番号:
 ;     10 ドライブノットレディ / 11 ライトプロテクト / 12 ハードエラー (レコードノット
 ;     ファウンド、ロストデータ) / 13 CRC エラー / 14 DD マーク検出 /
@@ -238,7 +233,7 @@ fr_wr_p:        LDB     <FDC_DRQ
                 BMI     fr_done         ; bit6 = INTRQ → 完了
                 LEAX    -1,X
                 BNE     fr_wr_p
-                LEAY    -1,Y            ; 外側は Y で数える (LEAU は条件コードを変えない)
+                LEAY    -1,Y            ; 外側は Y で数える
                 BNE     fr_wr
                 BRA     fr_timeover
 fr_wr_drq:      LDA     ,U+
@@ -285,8 +280,7 @@ ft_to:          LDA     #ERR_TIMEOVER
                 LDA     #ERR_NOTREADY
                 TSTB
                 BMI     ft_ret          ; bit7 = ノットレディ → 10
-                ; bit4 (シークエラー) では止めない (呼び手が自前で RESTORE を出して
-                ;   ヘッドを動かした後に DREAD を呼んでも、読出しを続ける)。位置の誤りは READ / WRITE SECTOR の ID の照合が
+                ; bit4 (シークエラー) では止めない。位置の誤りは READ / WRITE SECTOR の ID の照合が
                 ;   レコードノットファウンド (12) として返す。トラックレジスタは SEEK の後は
                 ;   目標トラックになっているので控えに写す
                 LDA     <FDC_TRK
@@ -299,9 +293,7 @@ ft_ret:         TSTA
                 ;   ヘッドが既に目標トラックに在るとき (このドライブのヘッドのトラックの
                 ;   控え ($FFE1+ドライブ) が目標と一致) は SEEK を出さずに READ SECTOR に
                 ;   入る (トラックレジスタは fr_rw が控えから書き戻してあるので、ID の照合は
-                ;   控えで行われる)。同じトラックへ SEEK を毎回出すと、位置決めの完了を待つ
-                ;   間に目標セクタがヘッドを通り過ぎ、連続セクタの読出しが 1 セクタごとに
-                ;   媒体 1 回転ぶん遅れるため。
+                ;   控えで行われる)。
 fr_dread:       CMPB    4,X             ; B = 控え (fr_rw で設定)。目標トラックと比べる
                 BEQ     fr_dgo
                 LDA     #$1C            ; SEEK
@@ -320,7 +312,7 @@ fr_rd_p:        LDB     <FDC_DRQ
                 BMI     fr_done
                 LEAX    -1,X
                 BNE     fr_rd_p
-                LEAY    -1,Y            ; 外側は Y で数える (LEAU は条件コードを変えない)
+                LEAY    -1,Y            ; 外側は Y で数える
                 BNE     fr_rd
                 BRA     fr_timeover
 fr_rd_drq:      LDA     <FDC_DATA
@@ -340,10 +332,7 @@ fr_scan:        INCA
                 BEQ     fr_scan
                 BRA     fr_exit
 ;------------------------------------------------------------------------------
-; $FF5E — ディスク BIOS のもう 1 つの入口
-;   X = RCB で、処理アドレス $FE02 / $FE05 / $FE08 を経ずに本体を呼べる。
-;   boot_init と同じ位置に置く。fr_errtab・fdc_wait・basic_vec・spin_wait はこの後ろに
-;   置く。
+; $FF5E ディスク BIOS の入口 (X = RCB)
 ;------------------------------------------------------------------------------
                 ZMB     $FF5E-*
                 JMP     fdc_rw                  ; $FF5E: X = RCB、種別に従って処理する
@@ -400,8 +389,7 @@ sw_lp:          LEAY    -1,Y
 
 ;------------------------------------------------------------------------------
 ; ctl_init — RS-232C 等の制御レジスタの初期化 (参考書籍)
-;   $FD07 (RS-232C のコマンド。参考書籍) と $FD25 / $FD27 / $FD29 /
-;   $FD2B (拡張の制御レジスタ。参考書籍) に $00 を 3 回書いてから $40 を書く
+;   $FD07 (RS-232C のコマンド) と $FD25 / $FD27 / $FD29 / $FD2B (拡張の制御レジスタ) に $00 を 3 回書いてから $40 を書く
 ;   (USART の内部リセットの手順。AV ブートイメージ avboot の nb_ctlinit と同じ)。
 ;   X と Y は保つ (X = 飛び先、Y = IPL へ渡す $0500)。A・B・U 破壊。
 ;------------------------------------------------------------------------------

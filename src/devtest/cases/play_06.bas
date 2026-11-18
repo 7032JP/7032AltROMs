@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM PLAY を関数の形で式に書いた 20 行で Syntax Error になることを確かめる。
 2 REM 30 行以降はエラーにより実行されない。
 10 PLAY "L1C","L1E"

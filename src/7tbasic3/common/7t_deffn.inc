@@ -8,36 +8,27 @@
 ;          関数の外の同名の変数とは別に扱う。関数は呼出前に定義しておく。
 ;
 ; 実装概要:
-;   - DEF 実行時 (idef_fn): FN 名前位置へのポインタを fn_def_tbl に登録するだけ。
+;   - DEF 実行時 (idef_fn): FN 名前位置を定義の記録 (fn_find) に登録するだけ。
 ;     以降のパラメータ/本体は登録せず、呼出時に同ポインタから再解析する。
-;   - FN 呼出時 (epr_fn, 式プライマリから): 名前で定義スロットを引き当て、
+;   - FN 呼出時 (epr_fn, 式プライマリから): 名前で定義の記録を引き当て、
 ;     実引数を評価 → パラメータ変数の呼出前の値を退避 → 束縛 → 本体式を評価 →
 ;     パラメータ変数を呼出前の値へ復元 → 結果 (FAC1) を返す。
 ;
 ; 入れ子/再帰呼出し:
-;   パラメータ束縛の作業域 fn_call_argptr / fn_def_scan / fn_nparam は $03F8-
-;   $03FC に連続配置した固定 RAM である。epr_fn はこの 5 バイトを入口でハード
-;   ウェアスタックへ退避し、出口で戻す。よって本体式や実引数の中から別の FN を
-;   呼んでも外側の呼出しの走査位置・束縛数は保存される。
+;   パラメータ束縛の作業域 fn_call_argptr / fn_def_scan / fn_nparam / fn_def_rec /
+;   fn_entry_rec は連続配置した固定 RAM である。epr_fn はこの 9 バイトを入口で
+;   ハードウェアスタックへ退避し、出口で戻す。
 ;
 ; 制限:
-;   - 定義数は FN_NSLOTS 個まで。
-;   - 入れ子の深さはハードウェアスタックの残量まで (1 段あたり 5 + 11×引数個)。
-;   本領域は空きプールの余白へ配置する。参照はラベル経由のみ。
+;   - 定義数はメモリの空きまで (1 個あたり 6 + 名前の長さ バイト)。
+;   - 入れ子の深さはハードウェアスタックの残量まで (1 段あたり 9 + 12×引数個 + 呼出しの分)。
 ;==============================================================================
-
-; fn_clear_tbl: DEF FN 定義表を全消去 (未定義=0)。コールドスタート/NEW から呼ぶ。
-;   破壊: A なし / X, B。
-fn_clear_tbl:
-                LDX     #fn_def_tbl
-                LDB     #FN_NSLOTS*FN_SLOTSZ
-                JMP     mz_l            ; B バイトのゼロ詰め (多倍長ヘルパと共用)
 
 ;------------------------------------------------------------------------------
 ; idef_fn: DEF FN 定義の登録 (impl_def から分岐)。
-;   入力: X = FN トークン ($CF) の位置。
-;   処理: 名前位置を fn_def_tbl の空き/同名スロットへ格納し、DEF 文の残りを
-;         ':'/行末まで読み飛ばして dispatcher へ復帰する。
+;   入力: X = TOK_FN の位置。
+;   処理: 名前位置を定義の記録へ格納し、DEF 文の残りを ':'/行末まで読み飛ばして
+;         dispatcher へ復帰する。
 ;------------------------------------------------------------------------------
 idef_fn:
                 ; 直接モードでは定義できない (Illegal Direct 12。参考書籍)。定義は
@@ -47,135 +38,70 @@ idef_fn:
                 CMPD    #$FFFF
                 BNE     idf_ok
                 LDB     #12             ; Illegal Direct
-                JMP     impl_error_handler
+                BRA     idf_err
 idf_ok:
                 LEAX    1,X             ; X = DEF FN 名前位置 (作業列内の def_ptr)
                 PSHS    X               ; def_ptr 退避
                 JSR     parse_var_name  ; VNPTR/VNLEN/VARTYP = FN 名前+型
-                BSR     fn_find_or_alloc ; U = 格納先スロット (走査は他行を作業列へ載せ得る)
-                ; スロットへ (行レコード, 行内オフセット) を格納する。
-                ; def_ptr は作業列内の値なので、作業列の先頭からの差をオフセットとして
-                ; 控える。変換は決定的なので、呼出時に同じ行を載せ直せば
-                ; 先頭+オフセット が同じ名前位置になる。
+                ; 同じ名前の定義が既にあれば Duplicate Definition (参考書籍)。
+                BSR     fn_find         ; U = 定義の記録の値
+                LDD     ,U
+                BEQ     idf_new
+                LDB     #10             ; Duplicate Definition
+idf_err:
+                JMP     impl_error_handler
+idf_new:
+                ; 記録へ (行レコード, 行内オフセット) を格納する。
+                ; def_ptr は作業列の先頭からのオフセットで控える。
                 LDD     CURLINE_PTR
                 STD     ,U              ; +0 行レコード先頭
-                LDD     ,S              ; D = def_ptr
+                PULS    X               ; X = def_ptr (名前位置)
+                TFR     X,D
                 SUBD    #EXECBUF
                 STB     2,U             ; +2 行内オフセット (256 未満)
-                JSR     exec_ensure     ; 表走査で他行が載った可能性 → 自行を復元
-                PULS    X               ; X = def_ptr (名前位置)
                 JMP     idef_skip       ; DEF 文の残りを ':'/行末まで読み飛ばす
 
 ;------------------------------------------------------------------------------
-; fn_find_or_alloc: VNPTR/VNLEN/VARTYP の FN 名前に対応するスロットを返す。
-;   既存同名スロットがあれば再利用、無ければ空きスロット、満杯なら先頭を上書き。
-;   出力: U = &slot。破壊: A, B, X, fn_tmp_*。
+; fn_find: 直前に解析した名前 (VNPTR/VNLEN/VARTYP) の定義の記録を得る。
+;   定義の記録は変数と配列の間 (FNTAB..ARYTAB) に置くので、定義できる数はメモリの
+;   空きで決まり、変数の検索の手間は定義の数で変わらない。記録の形は単精度の変数と
+;   同じで、名前は関数の型 1 バイトと関数名を続けたもの。値は +0 行レコード
+;   (0 = 未定義) / +2 行内オフセット。記録が無ければ値が 0 の記録を作って返す。
+;   定義の記録は全変数と一緒に消える。
+;   呼出側の名前は実行用行バッファの上に在るので、fn_probe_buf (17B) で組み立てる。
+;   出力: U = 値の先頭。X, Y は保存。破壊: A, B, VNPTR/VNLEN/VARTYP。
 ;------------------------------------------------------------------------------
-fn_find_or_alloc:
-                BSR     fn_name_save
-                BSR     fn_scan_tbl     ; pass1: 既存同名 (Z=1 → U=該当スロット)
-                BEQ     ffa_ret
-                ; pass2: 空きスロット
-                LDU     #fn_def_tbl
-                LDB     #FN_NSLOTS
-ffa2:
-                LDX     ,U
-                BEQ     ffa_ret
-                LEAU    FN_SLOTSZ,U
-                DECB
-                BNE     ffa2
-                ; 満杯 → 先頭スロットを上書き
-                LDU     #fn_def_tbl
-ffa_ret:
-                RTS
-
-;------------------------------------------------------------------------------
-; fn_name_save: 直前に解析した名前 (VNPTR/VNLEN/VARTYP) を照合用プローブへ複写する。
-;   定義側と呼出側の名前は別々の行に在り、単一の実行用行バッファでは同時に
-;   参照できない。そこで呼出側の名前を fn_probe_buf (16B) へ複写し、
-;   fn_tmp_ptr はプローブを指す。プローブは名前解析〜表照合の間だけ生きる。
-;   破壊: A, U。
-;------------------------------------------------------------------------------
-fn_name_save:
-                PSHS    X,B
+fn_find:
+                PSHS    X               ; 戻すのは gvr_valptr の前か gvr_new
                 LDX     VNPTR
                 LDU     #fn_probe_buf
+                LDA     VARTYP
+                STA     ,U+
                 LDB     VNLEN
-                BEQ     fns_key         ; 長さ 0 は複写なし (防御)
-fns_cp:
+ffd_cp:
                 LDA     ,X+
                 STA     ,U+
                 DECB
-                BNE     fns_cp
-fns_key:
-                LDU     #fn_probe_buf
-                STU     fn_tmp_ptr
+                BNE     ffd_cp
+                INC     VNLEN
+                LDX     #fn_probe_buf
+                STX     VNPTR
+                STB     VARTYP          ; B = 0 = VTYPE_SNG
+                LDU     FNTAB
+ffd_scan:
+                CMPU    ARYTAB
+                LBHS    gvr_new         ; 見つからない → 新規作成
                 LDA     VNLEN
-                ORA     VARTYP          ; 照合キー = 型|名前長 (1 バイトに畳む)
-                STA     fn_tmp_ty
-                PULS    B,X,PC
-
-;------------------------------------------------------------------------------
-; fn_scan_tbl: fn_def_tbl を走査し fn_tmp_* と同名の定義スロットを探す。
-;   出力: Z=1 → 発見 (U = &slot, X = def_ptr) / Z=0 → 未発見。
-;   破壊: A, B, X, U。
-;------------------------------------------------------------------------------
-fn_scan_tbl:
-                LDU     #fn_def_tbl
-                LDB     #FN_NSLOTS
-fst_lp:
-                LDX     ,U
-                BEQ     fst_next
-                BSR     fn_name_eq      ; Z=1 なら一致 (U/B/X 保存)
-                BEQ     fst_ret
-fst_next:
-                LEAU    FN_SLOTSZ,U
-                DECB
-                BNE     fst_lp
-                ANDCC   #$FB            ; Z=0 (未発見)
-fst_ret:
-                RTS
-
-;------------------------------------------------------------------------------
-; fn_name_eq: スロット U の指す FN 名前を解析し fn_tmp_* (プローブ) と比較。
-;   スロットの行を作業列へ載せてから、行内オフセット位置の名前を解析する。
-;   出力: Z=1 一致 (X = 名前位置) / Z=0 不一致。U, B は保存する (照合ループ用)。
-;------------------------------------------------------------------------------
-fn_name_eq:
-                PSHS    U,B             ; 走査状態を保存
-                ; X = スロットの名前位置 (行を作業列へ) (ここへ展開)
-;------------------------------------------------------------------------------
-; fn_slot_ptr — スロット U の (行レコード, オフセット) から名前位置 X を得る。
-;   スロットの行を作業列へ載せる。
-;   入力: U = &slot。出力: X = 名前位置。破壊: B, D。U/Y は保存。
-;------------------------------------------------------------------------------
-fn_slot_ptr:
-                LDX     ,U              ; X = 行レコード
-                JSR     exec_load_rec
-                LDX     #EXECBUF
-                LDB     2,U             ; 行内オフセット
-                ABX
-                PSHS    X               ; 解析入力を保存 (parse で前進するため)
-                JSR     parse_var_name  ; VNPTR/VNLEN/VARTYP = 格納名前 (A,B,X,U 破壊)
-                PULS    X               ; 格納名前位置を復元
-                LDA     VNLEN
-                ORA     VARTYP          ; 照合キー = 型|名前長
-                CMPA    fn_tmp_ty
-                BNE     fne_no
-                ; 名前本体を比較する。U は入口で退避済なので破壊してよい。
-                ; vn_cmp は「U の指すエントリの U+1 から」を読む規約。
-                LDU     fn_tmp_ptr
-                LEAU    -1,U
-                JSR     vn_cmp
-                BNE     fne_no
-                PULS    B,U
-                ORCC    #$04            ; Z=1 (一致)
-                RTS
-fne_no:
-                PULS    B,U
-                ANDCC   #$FB            ; Z=0 (不一致)
-                RTS
-
+                CMPA    ,U
+                BNE     ffd_next
+                JSR     vn_cmp          ; 名前本体を比較
+                BNE     ffd_next
+                PULS    X
+                JMP     gvr_valptr
+ffd_next:
+                JSR     gvr_valptr      ; U = 値先頭
+                LEAU    4,U             ; 次の記録
+                BRA     ffd_scan
 
 ;------------------------------------------------------------------------------
 ; fn_ens_def / fn_ens_ent — 定義行 / 呼出時に載っていた行を作業列へ復元する。
@@ -197,13 +123,13 @@ fe_ret:
 
 ;------------------------------------------------------------------------------
 ; epr_fn: FN 呼出し (式プライマリから)。
-;   入力: X = FN トークン ($CF) の位置。
+;   入力: X = TOK_FN の位置。
 ;   出力: FAC1 = 関数値, X = 実引数の直後 (呼出しの直後)。
 ;         未定義 FN は Error 18 (Undefined user function)。
 ;------------------------------------------------------------------------------
 epr_fn:
                 JSR     chk_stack       ; FN の再帰 1 段ごとにシステムスタックの空きを確かめる
-                ; --- 作業域 ($0771-$0779 の 9B) をスタックへ退避 (入れ子対応) ---
+                ; --- 作業域 (fn_call_argptr から 9B) をスタックへ退避 (入れ子対応) ---
                 ;   fn_call_argptr(2) / fn_def_scan(2) / fn_nparam(1) /
                 ;   fn_def_rec(2) / fn_entry_rec(2) は連続配置。
                 ;   高位アドレスから積み、efn_done で低位アドレスから戻す。
@@ -220,107 +146,130 @@ efn_ctxsave:
                 LDD     EXECREC
                 STD     fn_entry_rec
                 LEAX    1,X             ; X = 呼出側 FN 名前
-                JSR     parse_var_name  ; VNAME/VARTYP = 呼出 FN 名前+型
+                JSR     parse_var_name  ; VNPTR/VNLEN/VARTYP = 呼出 FN 名前+型
                 STX     fn_call_argptr  ; 実引数走査開始位置 ('(' or 名前直後)
-                JSR     fn_name_save    ; 名前をプローブへ複写 (照合キー込み)
-                ; 定義スロットを名前で検索 (定義行を作業列へ載せ得る)
-                BSR     fn_scan_tbl
-                BEQ     efn_found
+                BSR     fn_find         ; U = 定義の記録の値
+                LDX     ,U              ; X = 定義行 (0 = 未定義)
+                BNE     efn_found
                 ; 未定義 → Undefined user function
-                ; Undefined user function (ここへ展開)
-; iget_colors (GET@ ドットパターン形式の色指定組立) は 7t_startup.inc の空きプール
-;   に置く (置き場所は容量の都合)。参照はラベル経由のみで位置依存なし。
 err_c18:
                 LDB     #18             ; Undefined user function
                 JMP     errc_go
 efn_found:
-                ; U = &slot, X = def_ptr (定義行は作業列に載っている)
-                LDD     ,U
-                STD     fn_def_rec      ; 定義行 (以後の定義側 ensure 用)
+                STX     fn_def_rec      ; 定義行 (以後の定義側 ensure 用)
+                JSR     exec_load_rec   ; 定義行を作業列へ
+                LDX     #EXECBUF
+                LDB     2,U             ; 行内オフセット
+                ABX                     ; X = 定義の名前位置
                 JSR     parse_var_name  ; DEF FN 名前を消費 → X が '(' or '=' へ
                 STX     fn_def_scan
                 CLR     fn_nparam       ; (extended。X は不変なので再読込は不要)
                 JSR     skip_sp_lparen
-                BNE    efn_body        ; パラメータ無し
+                LBNE    efn_body        ; パラメータ無し (定義行は載っていて X は '=' の位置)
                 ; パラメータ有り: DEF 側 '(' と呼出側 '(' をスキップ
                 JSR     fn_swap_to_call ; DEF 側を控えて呼出側へ (共通化)
                 CMPA    #'('
-                BNE     efn_e2
+                LBNE    errc_2
                 LEAX    1,X
-                STX     fn_call_argptr
-efn_ploop:
-                ; --- 実引数を評価 (この時点でパラメータ未束縛=大域値は健在) ---
-                BSR     fn_ens_ent      ; 呼出側の行を作業列へ
-                LDX     fn_call_argptr
+efn_aloop:
+                ; --- 実引数を左から順に評価し、値をスタックへ控える (1 個 12B) ---
+                ;   パラメータへ代入するのは、実引数を全部評価し終えた後。実引数の式が
+                ;   パラメータと同じ名前の変数を読んだときも、呼出側の値が見える。
+                ;   控えの並び: +0 STRLEN / +1 FACTYPE / +2 STRPTR / +4 FAC1 (8B)
                 JSR     impl_eval_expr  ; FAC1 = 実引数
-                STX     fn_call_argptr
-                ; --- パラメータ変数を解決 (無ければ作成) ---
-                BSR     fn_ens_def      ; 定義行を作業列へ
-                LDX     fn_def_scan
-                JSR     impl_get_var_ref ; U=値アドレス, VARTYP=型, VNPTR/VNLEN=名前, X=名前直後
-                STX     fn_def_scan
-                ; --- 呼出前の値(8B)+名前(位置2B/長さ/型) を 12B フレームで退避 ---
-                LEAX    8,U             ; U+8 から後方へ 8 バイト読む
-                LDB     #8
-efn_pushv:
-                LDA     ,-X
-                PSHS    A               ; value[7]..value[0] の順で積む (value[0] が上)
-                DECB
-                BNE     efn_pushv
-                ; U は impl_get_var_ref が返した値アドレスで、直後の impl_assign_var が
-                ;   使う。ここで LDU を挟むと束縛先を見失うので A だけで積む。
-                LDA     VARTYP
-                PSHS    A
-                LDA     VNLEN
-                PSHS    A
-                LDA     VNPTR+1
-                PSHS    A
-                LDA     VNPTR
-                PSHS    A               ; スタック上端 = 名前位置 上位 (12B フレーム)
-                ; --- 実引数 (FAC1) をパラメータへ束縛 ---
-                JSR     impl_assign_var ; U/VARTYP/FAC1 → 変数へ格納
+                BSR     fn_str_tmp      ; 文字列は定義行を載せる前に一時領域へ
+                LDD     FAC1+4
+                LDU     FAC1+6
+                PSHS    U,D
+                LDD     FAC1
+                LDU     FAC1+2
+                PSHS    U,D
+                LDA     STRLEN
+                LDB     FACTYPE
+                LDU     STRPTR
+                PSHS    U,D
                 INC     fn_nparam
-                ; --- 区切り: ',' なら次パラメータ, ')' なら終了 ---
-                LDX     fn_def_scan
-                JSR     skip_comma
-                BCC     efn_pdone
-                STX     fn_def_scan
-                JSR     fn_ens_ent      ; 呼出側の行を作業列へ
-                LDX     fn_call_argptr
-                JSR     skip_comma
-                BCC     efn_e2
-                STX     fn_call_argptr
-                BRA     efn_ploop
-; errc_2 への近距離中継。DEF FN の書式を咎める 5 箇所は errc_2 まで短分岐が
-;   届かないので、無条件分岐の直後 (落ち込みの無い位置) に 1 本置く。
-efn_e2:
-                JMP     errc_2
-efn_pdone:
-                CMPA    #')'
-                BNE     efn_e2
-                JSR     fn_swap_to_call ; DEF 側を控えて呼出側へ (共通化)
+                JSR     skip_comma      ; ',' なら次の実引数
+                BCS     efn_aloop
                 CMPA    #')'
                 BNE     efn_e2
                 LEAX    1,X             ; 呼出側 ')' をスキップ (= 戻り X)
                 STX     fn_call_argptr
+                ; --- 定義側のパラメータを左から順に解決し、控えた値を代入する ---
+                ;   控えの場所は、呼出前の値と名前の枠 (12B) に作り替える。
+                ;   枠の並び: +0 VNLEN / +1 VARTYP / +2 VNPTR / +4 呼出前の値 (8B)
+                JSR     fn_ens_def      ; 定義行を作業列へ
+                LDX     fn_def_scan
+                LDA     fn_nparam
+                PSHS    A               ; 0,S = 残りのパラメータの数
+efn_bloop:
+                JSR     impl_get_var_ref ; U=値アドレス, VARTYP=型, VNPTR/VNLEN=名前, X=名前直後
+                STX     fn_def_scan
+                LDB     ,S
+                DECB
+                LDA     #12
+                MUL
+                LEAX    1,S
+                ABX                     ; X = このパラメータの控え (先の実引数ほど深い)
+                LDD     ,X
+                STA     STRLEN
+                STB     FACTYPE
+                LDD     2,X
+                STD     STRPTR
+                LDA     VNLEN
+                LDB     VARTYP
+                STD     ,X++
+                LDD     VNPTR
+                STD     ,X++
+                LDY     #FAC1           ; FAC1 ← 控えた値 / 枠 ← 変数の今の値 (8B)
+                LDB     #8
+efn_bmv:
+                LDA     ,X
+                STA     ,Y+
+                LDA     ,U+
+                STA     ,X+
+                DECB
+                BNE     efn_bmv
+                LEAU    -8,U            ; U = 変数の値のアドレスへ戻す
+                JSR     impl_assign_var ; U/VARTYP/FAC1 → 変数へ格納
+                DEC     ,S
+                BEQ     efn_bdone
+                LDX     fn_def_scan
+                JSR     skip_comma
+                BCS     efn_bloop       ; 定義側の次のパラメータへ
+; errc_2 への中継。
+efn_e2:
+                JMP     errc_2
+; fn_str_tmp — FAC1 が文字列なら実体を一時領域へ複写する。
+;   実引数に書いた文字列定数と、本体の式が返す文字列定数は作業列 (実行用行
+;   バッファ) の上にある。定義行と呼出行を載せ替えるとその位置の字は別の行の字に
+;   なるので、載せ替える前に一時領域へ写しておく。数値なら何もしない。
+fn_str_tmp:
+                JSR     chk_type_str
+                BNE     efn_ret         ; 数値 → そのまま
+                JMP     str_to_tmp
+efn_bdone:
+                PULS    A               ; 残りの数の枠を捨てる
+                LDX     fn_def_scan
+                JSR     skip_sp_x
+                CMPA    #')'            ; 定義側のパラメータが実引数より多ければ ',' が来る
+                BNE     efn_e2
+                LEAX    1,X
 efn_body:
                 ; DEF 側は '=' (TOK_EQ) が続くはず → 本体式を評価 (定義行の上)
-                JSR     fn_ens_def
-                LDX     fn_def_scan
                 JSR     skip_sp_x
                 CMPA    #TOK_EQ
                 BNE     efn_e2
                 JSR     eval_expr_x1
+                BSR     fn_str_tmp      ; 文字列定数は呼出行を載せ直す前に一時領域へ
                 ; --- パラメータを呼出前の値へ復元 (LIFO) ---
                 LDA     fn_nparam
                 BEQ     efn_done
 efn_rlp:
-                PULS    U
-                STU     VNPTR
-                PULS    A
+                PULS    A,B,U           ; 枠の先頭 4B = VNLEN / VARTYP / VNPTR
                 STA     VNLEN
-                PULS    A
-                STA     VARTYP
+                STB     VARTYP
+                STU     VNPTR
                 LDX     #0
                 JSR     gvr_find_scalar ; U = 値アドレス (再解決。表移動に耐える)
                 LDA     VARTYP
@@ -345,8 +294,8 @@ efn_ctxrest:
                 STA     ,U+
                 DECB
                 BNE     efn_ctxrest
+efn_ret:
                 RTS
-; (impl_end / impl_stop の置き場所は容量の都合で本プール)
 ; END
 ;   END も停止位置を記録する (表示はしない)。CONT すると END の次の文から続く。
 ;   入れ子の枠はシステムスタックに残したまま Ready へ戻る (CONT が続きを使う)。
@@ -360,9 +309,7 @@ impl_end:
 ;   停止位置を記録したうえで "Break In <行番号>" を出す。直接モードの STOP は
 ;   記録も行番号表示も行わない (cont_save が CURLIN = $FFFF を見て抑止する)。
 impl_stop:
-                ; brk_pre = 現在行を閉じる改行 1 回 + err_pre (演奏中断 + 表示前の
-                ; 行送り)。Break 表示の前だけ空行が 2 行になるのは、この「現在行を
-                ; 閉じる」改行が行頭でも無条件に出るためである。
+                ; brk_pre = 現在行を閉じる改行 1 回 + err_pre。
                 JSR     brk_pre
                 JSR     cont_save       ; X = STOP の直後 = 再開位置, D = 停止行
                 PSHS    D               ; 表示中に壊れる停止行番号を退避
@@ -374,11 +321,11 @@ impl_stop:
 
 ;==============================================================================
 ; PRINT@(x,y),コード[;コード...] — グラフィック座標指定の文字/漢字コード描画
-;   参考書籍の PRINT@ (座標形式): グラフィック座標 (x,y) を基点に、
+;   グラフィック座標 (x,y) を基点に、
 ;   続く数値コード列 (';' 区切り) を 2 バイト JIS 漢字コードとして描画する。
 ;   各コードは漢字グリフ (16x16) を漢字 ROM から読み、当該座標へ描く。
 ;
-;   本体は空きプールに配置する。ジャンプ表 $B9 は impl_print_disp を指し、
+;   ジャンプ表は impl_print_disp を指し、
 ;   '@' 形式なら impl_print_at、それ以外は impl_print へ委譲する
 ;   (impl_color_disp と同一方式)。
 ;
@@ -387,10 +334,10 @@ impl_stop:
 ;     $FD22/$FD23 = データ (1 行 = 左 8 ドット/右 8 ドットの 2 バイト)
 ;   16 行 × 2 バイト = 32 バイトのモノクロ ビットイメージを読み出す。
 ;
-;   グリフ描画はサブシステムのブロック描画コマンド $1C (Put Block 2, 単色) へ
+;   グリフ描画はブロック描画コマンド $1C (Put Block 1) に
 ;     渡す (共有 RAM 経由・impl_sub_send_cmd)。パラメータ配置:
 ;       SUBCMD_CMD=$1C, P1:P2=X1, P3:P4=Y1, P5:P6=X2(=X1+15), P7:P8=Y2(=Y1+15),
-;       P9=描画色, P10=モード(0), P11.. =32 バイト グリフ
+;       P9=描画色, P10=モード(0), P11=データバイト数, P12.. =32 バイト グリフ
 ;   1 文字ごとに X 基点を 16 ドット進める (漢字桁送り)。
 ;==============================================================================
 impl_print_disp:
@@ -452,7 +399,7 @@ ipat_draw_char:
                 ; --- グリフ 32 バイトを SUBCMD_P11.. へ読込 ---
                 LDY     #SUBCMD_P11+1   ; グリフ格納先 (P11=バイト数, P11+1.. =データ)
                 JSR     kanji_read32
-                ; --- サブシステム $1C (Put Block 2) を組み立て発行 ---
+                ; --- サブシステム $1C (Put Block 1) を組み立て発行 ---
                 LDA     #$1C
                 JSR     sub_stage_x0    ; SH_ERR/SH_CNT=0, P1=tmpX16 (共通化)
                 ADDD    #15
@@ -572,25 +519,22 @@ ipat_khb:
 
 
 
-; (CONSOLE の本体 impl_console_ext は、置き場所が容量の都合で
-;  7t_startup.inc の空きプールにある。参照は impl_console からの
-;  JMP だけで位置依存はない)
 
 ;==============================================================================
 ; pool_line_input — LINE INPUT [;] ["プロンプト";] 文字列変数
-;   (impl_line から分岐。本プールに配置)
 ;
 ;   LINE INPUT 文はキーボードから 1 行を、カンマや
 ;   引用符で区切らずそのまま 1 個の文字列変数へ読み込む。INPUT 文と違い
 ;   プロンプトの後に "? " を自動付加しない。
 ;   入力: X = 関数トークン $FF の位置 (LINE トークンの直後)
-;   出力: X = 文の直後。読み取った行は INPBUF を指す文字列として変数へ格納。
+;   出力: X = 文の直後。読み取った行 (INPBUF) を文字列として変数へ代入する
+;         (代入で文字列領域へ複写される)。
 ;==============================================================================
 pool_line_input:
                 LDA     1,X                     ; 関数トークン第2バイト
                 CMPA    #TOK2_INPUT
                 BNE     pli_syn                 ; LINE + 別関数 → Syntax Error
-                LEAX    2,X                     ; $FF $A6 を消費
+                LEAX    2,X                     ; 関数語の 2 バイトを消費
                 JSR     in_prompt               ; ';' 読み飛ばし + プロンプト表示 (共用)
                 BCC     pli_read                ; プロンプト無し
                 ; 区切り ';' / ',' を消費する ("? " は付けない)
@@ -605,8 +549,7 @@ pli_read:
                 PSHS    X                       ; 本文ポインタ退避
                 JSR     impl_input_line         ; 1 行入力 → INPBUF (0 終端)
                 PULS    X
-                JSR     skip_sp_x
-                JSR     impl_get_var_ref        ; U = 値アドレス, VARTYP, X = 名前直後
+                JSR     get_var_ref_chk         ; U = 値アドレス, VARTYP, X = 名前直後
                 LDA     VARTYP
                 CMPA    #VTYPE_STR
                 BNE     pli_syn                 ; 文字列変数以外は Syntax Error
@@ -629,20 +572,16 @@ pli_len_e:
 pli_syn:
                 JMP     errc_2              ; Syntax Error (尾部併合)
 
-; pool_instr_arg1 / pool_fn_sgn は 7t_startup.inc の空きプールに置く
-; (置き場所は容量の都合)。呼出は JSR/JMP の絶対アドレスなので配置先は自由。直前 (pli_syn) が JMP で終わるため落ち込み経路もない。
 
-; pool_fn_rnd — RND の本体。7t_funcs.inc の当該区間は ZMB 予算が
-;   足りないため、ここ (ZMB $C000 が吸収するプール) へ置く。
+; pool_fn_rnd — RND の本体。
 ;   RND [(引数)] — 0 <= x < 1 の単精度乱数 (参考書籍):
 ;     省略 / 正 … 系列を 1 歩進めて次の値を返す (引数の大きさは使わない)
 ;     0          … 系列を進めず直前に返した値をもう一度返す
 ;     負         … 引数 (単精度化後) で系列を初期化し直して 1 歩進める
 ;                  (= 同じ負数からは常に同じ決定的な列)
-;   生成規則は本実装独自のもので、32bit の排他的論理和と桁送りだけで回す
-;   (Marsaglia が公表した xorshift の公知パラメータ 13/17/5):
+;   生成規則は xorshift (13/17/5) 方式:
 ;       x ^= x << 13 ;  x ^= x >> 17 ;  x ^= x << 5
-;   状態 x は 32bit ($0745 の rnd_state 4B) で、0 以外から始めれば 0 に落ちない。
+;   状態 x は 32bit (rnd_state) で、0 以外から始めれば 0 に落ちない。
 ;   値は「指数 $7F・仮数 = x の上位 24bit・ガード = x の最下位 8bit・符号正」を
 ;   単精度へ正規化して作る (fadd の正規化・丸め尾部 fac_normalize を共用)。
 ;   これにより 24bit 全体が動く粒度になる。
@@ -682,7 +621,7 @@ ifr_value:
                 CLR     fa_sgn
                 JMP     fac_normalize
 
-; pool_iran_st — RANDOMIZE の格納実体。入力: D = 16bit 整数化済み引数。
+; pool_iran_st — RANDOMIZE の格納実体 (本体は pool_iran_ask の後)。入力: D = 16bit 整数化済み引数。
 ;   引数を状態の上位 16bit に置き、下位 16bit は固定値にする (引数 0 でも状態が
 ;   全ビット 0 にならないようにするため)。同じ引数からは常に同じ列になる。
 ;   最後に 1 歩進めるところまでが RANDOMIZE の仕事。
@@ -765,7 +704,7 @@ rnd_eor:
                 STA     rnd_x+3
                 RTS
 
-; PAINT (置き場所は容量の都合で本プール)
+; PAINT
 impl_paint:
                 JSR     impl_parse_xy_cmd   ; (x,y) → tmpX16, tmpY16
                 ; ',' ペイントカラー
@@ -807,11 +746,7 @@ ipaint_bc1:
                 STA     SUBCMD_P7           ; $D389 = BC1
                 LDA     #1
                 STA     SUBCMD_P6           ; $D388 = Nc (ひとまず 1)
-                ; 境界色は参考書籍どおり何個でも並べられる (PAINT (x,y),塗色,境界色…)。
-                ;   ',' が続く限り $D389 以降へ積み、個数を $D388 へ書く。
-                ;   個数の上限はサブシステム側の色リスト容量に合わせて 8。
-                ;   ここを 1 個固定にしていると、境界として指定された残りの色を
-                ;   塗りが通り抜けてしまい、囲みの外まで際限なく広がる。
+                ; 境界色は ',' が続く限り積み、個数を書く。上限は 8。
 ipaint_bcn:
                 JSR     skip_sp_tst     ; 空白飛ばし + A の 0 判定 (共通化)
                 CMPA    #','
@@ -830,21 +765,15 @@ ipaint_bcs:
                 STB     A,U                 ; $D388+個数 = 次の境界色スロット
                 BRA     ipaint_bcn
 ipaint_go:
-                ; ここでは追加の送出を行わない (復帰時 A=BC1 のままコマンド $04
-                ;   (行入力) 等を誤発行すると main/sub 両 CPU が相互待ちで停止する)。
                 JMP     impl_sub_send_cmd   ; 末尾呼出
 
-                ; PRINT 本体 (末尾委譲, RTS は本体側で) (ここへ展開)
+
 ;------------------------------------------------------------------------------
 ; PRINT 本体
-;   置き場所は容量の都合で本プール。参照はラベル経由のみで
-;   位置依存は無い。TAB(/SPC( トークンは式評価へ流さない (式プライマリが
-;   未消費のまま 0 を返し、" 0" を無限に印字し続けるため)。
+;   TAB(/SPC( トークンは式評価へ流さない。
 ;------------------------------------------------------------------------------
 impl_print:
-                ; 表示文字列の先頭にフィールドを作る: SF オーダ ($11 + 現在の文字色
-                ; $01E5 の値。参考書籍)。$01E5 を POKE で書き換えて
-                ; 保護 (P) や反転 (R) を立てた文字列も、そのままの属性で表示される。
+                ; 表示の先頭で SF オーダ ($11 + 現在の文字色) を送る (参考書籍)。
                 JSR     ic12_send
 ip_loop:
                 JSR     skip_sp_tst     ; 空白飛ばし + A の 0 判定 (共通化)
@@ -863,11 +792,7 @@ ip_loop:
                 LBEQ    ip_spc
                 CMPA    #TOK_USING      ; USING → 書式出力
                 LBEQ    ip_using
-                ; 対応する開き括弧を持たない ')' が項の位置に来た場合。式評価は
-                ; ここで値を返せず読み取り位置も進められないので、そのまま項の
-                ; 評価へ渡すと同じ 1 文字を読み直して出力が止まらなくなる。
-                ; 参考書籍の式の規則にない綴りなので Syntax Error とする
-                ; (それまでに出した項はすでに画面に出ている)。
+                ; 対応する '(' の無い ')' は Syntax Error。
                 CMPA    #')'
                 LBEQ    ion_err
                 JSR     impl_eval_expr
@@ -876,10 +801,7 @@ ip_loop:
 
 ;------------------------------------------------------------------------------
 ; ip_at_end — 区切り (';' / ',') の直後が「文の終わり」かを Z で返す。
-;   文の終わりは 行末 ($00) / ':' / ELSE トークンの 3 つ。IF 〜 THEN の節に
-;   置かれた PRINT は ELSE で終わるので、ELSE も終わりとして数える。ここを
-;   見落とすと `IF 1 THEN PRINT "*"; ELSE …` で ';' の改行抑止が効かず、
-;   ip_loop 冒頭の ELSE 判定 (改行あり) に落ちて余分な改行が出る。
+;   文の終わりは 行末 ($00) / ':' / ELSE トークンの 3 つ。
 ;   前置の空白は読み飛ばす (X を進める)。破壊: A。Z=1 なら文末。
 ;------------------------------------------------------------------------------
 ip_at_end:
@@ -899,9 +821,11 @@ ip_semi:
 ip_comma:
                 LEAX    1,X
                 ; カンマは文末であっても次のゾーンへ送る (参考書籍が定める体裁)。
-                ; カンマゾーン折返し: 既に 2 ゾーン目 (PRINT_COL>=15) に居る場合は
-                ; 改行して次行の先頭ゾーンへ。さもなくば次ゾーン (col14) へ tab。
+                ; 行の先頭 (PRINT_COL = 0) なら桁 14 まで空白を出す。15 以上なら
+                ; 改行して次の行の先頭へ。1〜14 なら次の 14 桁単位の位置まで空白を
+                ; 出す (桁がちょうど 14 なら何も出さない)。
                 LDA     PRINT_COL
+                BEQ     ipc_sp          ; 行の先頭 → 桁 14 へ
                 CMPA    #15
                 BLO     ipc_tab
                 JSR     disk_crlf       ; CR+LF (共通の改行出力)
@@ -918,6 +842,7 @@ ipc_tab_have:
                 ; A = PRINT_COL mod 14。0 ならゾーン先頭 (tab 不要)
                 TSTA
                 BEQ     ipc_end
+ipc_sp:
                 JSR     put_space               ; 空白 1 個を出す
                 BRA     ipc_tab
                 ; (impl_putchar が PRINT_COL を進めるためループで収束)
@@ -931,11 +856,10 @@ ip_nl:
 ip_done_nonl:
                 RTS
 
-; TAB(n): 桁 (n MOD 40) へ移動 (動作観察)。
+; TAB(n): 桁 (n MOD 40) へ移動 (動作観察)。本体は ip_tab。
 ;   現在桁が目標を超えていれば改行してから桁合わせ (動作観察)。
 ;   桁位置は 0..32767 (参考書籍 TAB)。n<0 は Illegal Function Call。
 ;   引数は最近接丸めで整数化し、32767 超は共通の整数変換で Overflow。
-; >>FOLD fn_swap_to_call
 ;------------------------------------------------------------------------------
 ; fn_swap_to_call — DEF 側の走査位置を控えて呼出側の引数位置へ切り替え、空白を
 ;   読み飛ばして A に次の 1 文字を返す。DEF FN の引数解析の 2 箇所で使う。
@@ -946,8 +870,6 @@ fn_swap_to_call:
                 JSR     fn_ens_ent      ; 呼出側の行を作業列へ
                 LDX     fn_call_argptr
                 JMP     skip_sp_x
-; <<FOLD fn_swap_to_call
-; >>FOLD ip_tabspc_arg
 ;------------------------------------------------------------------------------
 ; ip_tabspc_arg — TAB( / SPC( の引数を読む定型。'(' 込みのトークンを消費し、
 ;   式を評価して最近接丸めで整数化し、')' を消費して D = n / TSTA 済で返す。
@@ -959,7 +881,6 @@ ip_tabspc_arg:
                 JSR     chk_num         ; 文字列を渡されたら Type Mismatch
                 JSR     impl_fac_to_int_round ; D = n
                 PSHS    D
-                ; ')' を消費 (A 破壊) (ここへ展開)
 ; ')' を消費する。無ければ Syntax Error。
 ip_tabspc_rpar:
                 JSR     skip_sp_x
@@ -969,7 +890,6 @@ ip_tabspc_rpar:
                 PULS    D
                 TSTA
                 RTS
-; <<FOLD ip_tabspc_arg
 ip_tab:
                 BSR     ip_tabspc_arg   ; D = n / TSTA 済 (共通化)
                 BMI     ip_tabspc_ifc   ; n<0 → Illegal Function Call
@@ -1021,11 +941,9 @@ ip_tabspc_syn:
 ;   先頭 (TXTTAB)。行番号指定があれば該当行レコードを探し X に返す。
 ;   RUNLIN は消費時に $FFFF へ戻す (CHAIN 等の後続 impl_exec_prog を汚さない)。
 ;   不存在行は Undefined line number (ERR 8。GOTO と同じ)。
-;   (本体は ZMB $C000 が吸収する本プールへ配置)
 ;==============================================================================
 iep_start_x:
-                ; INTERVAL 割込は RUN 毎に全状態を初期化する。前回実行の
-                ; 有効状態・保留・登録行を持ち越すと、編集で消えた行へ分岐し得る。
+                ; INTERVAL 割込は RUN 毎に全状態を初期化する。
                 JSR     intv_reset      ; 破壊: B, X (直後に X は上書きされる)
                 LDD     RUNLIN
                 CMPD    #$FFFF
@@ -1042,7 +960,6 @@ isx_undef:
                 JMP     errc_8        ; Undefined line number
 
 ; impl_print_str — 0 終端文字列を putchar で出力。
-;   (置き場所は容量の都合。参照はラベル経由のみで位置依存なし)
 impl_print_str:
                 LDA     ,X+
                 BEQ     ips_done
@@ -1097,14 +1014,13 @@ ps7_end:
 ;   入力: X = LIST トークン直後
 ;   出力: il_start_ln = 開始行 (既定 0), il_end_ln = 終端行 (既定 $FFFF)
 ;         X = 引数の直後
-;   参考書籍の LIST 構文:
+;   LIST の範囲:
 ;     LIST      全行     (start=0,  end=$FFFF)
 ;     LIST n    n 行のみ (start=n,  end=n)
 ;     LIST n-   n 以降   (start=n,  end=$FFFF)
 ;     LIST n-m  n〜m     (start=n,  end=m)
 ;     LIST -m   先頭〜m  (start=0,  end=m)
-;   '-' は ASCII $2D / トークン化 $DA の双方を許容 (LOAD 後は $DA へ化ける)。
-;   (7t_save_list.inc の impl_list から呼ぶ。本プールへ配置)
+;   '-' は ASCII とトークン TOK_MINUS の双方を許容。
 ;==============================================================================
 il_parse_range:
                 CLRA
@@ -1124,8 +1040,8 @@ ipr_dash:
                 LDA     ,X
                 CMPA    #'-'            ; ASCII '-'
                 BEQ     ipr_have_dash
-                CMPA    #','            ; 参考書籍は範囲の区切りに
-                BEQ     ipr_have_dash   ;   ハイフォンとコンマの双方を認める
+                CMPA    #','            ; 範囲の区切りは '-' と ',' の双方を認める
+                BEQ     ipr_have_dash
                 CMPA    #TOK_MINUS      ; トークン化 '-'
                 BNE     ipr_done        ; 区切り無し → end 現状維持
 ipr_have_dash:
@@ -1142,8 +1058,6 @@ ipr_have_dash:
 ipr_done:
                 RTS
 
-; (cont_clear の置き場所は容量の都合で 7t_core.s の末尾の空き区画。
-;  参照はラベル経由のみで位置依存なし)
 
 ;==============================================================================
 ; エラーメッセージテーブル (参考書籍の英語文言)
@@ -1159,9 +1073,6 @@ ipr_done:
 ;     索引 27..41  = エラーコード 50..64  (コード − 23)
 ;     索引 42..50  = エラーコード 65..73  (コード − 23)
 ;   コード 0 / 27..49 / 74 以上は索引 21 (Unprintable Error) へ丸める。
-;   配置: 本表は外部から呼ばれる入口ではなく、参照は 7t_runtime.inc の
-;   `LDX #err_msg_tbl` 1 箇所のラベル経由だけである。アドレスを固定する必然性が
-;   無いためアドレスアンカを置かず、本プールの末尾に置く。
 ;==============================================================================
 ;   語彙番号 (ps7_words の並び順。1 起算)。文言表と語彙表は本ファイル内で完結する。
 W_FILE          EQU     $01     ; File
@@ -1334,9 +1245,8 @@ ps7_words:
 
 err_msg_tbl_end:
 
-; CIRCLE 頂点角の sin 定数表 後半 (j=9..15)。自前 sin コア
-;   (fx_sin_core) の実出力ビット列 (6B 展開形: 指数/仮数 32bit/符号)。
-;   前半 c_sjtab9 (7t_funcs.inc) と分置して容量を均衡させる。
+; CIRCLE 頂点角の sin 定数表 後半 (j=9..15)。
+;   6B 展開形: 指数/仮数 32bit/符号。前半は c_sjtab9 (7t_funcs.inc)。
 c_sjtab7:
                 FCB     $7F,$C5,$E4,$03,$58,$00 ; j=9
                 FCB     $7F,$D4,$DB,$31,$49,$00 ; j=10
@@ -1351,15 +1261,9 @@ c_sjtab7:
 ;   エラー名を出したあと、プログラム実行中なら " In <発生行番号>" を付ける。
 ;   直接モードでは CURLIN = $FFFF なので行番号を付けない
 ;   (STOP の "Break In nnnnn" と同じ体裁)。
-;   本体は impl_error_handler と同じ区間 (空きプール) に置く。誤り送出を
-;     共通スタブ (errc_5 / errc_8 / errc_2) にまとめて当区間に余裕を作ってある。
 ;------------------------------------------------------------------------------
 ieh_tail:
-                ; 捕捉されずに止まった誤りの後は入れ子の枠を捨て、システムスタックを
-                ; 上端 (文字領域の下限) へ戻す。参考書籍が CONT を
-                ; 認めるのは BREAK / STOP / END の後だけなので、サブルーチン / 繰り返し /
-                ; WHILE の枠はもう要らない。占有したままにすると、記憶を使い切って
-                ; 止まった直後の直接モードの行が置けなくなる。
+                ; 捕捉されずに止まった誤りの後は入れ子の枠を捨て、スタックを戻して再開位置を記録する。
                 ; (STOP / BREAK は iet_d から入るのでここを通らない = 枠は残る)
                 LDS     STRBOT
                 STS     EXEC_SP
@@ -1385,15 +1289,11 @@ iet_d:
                 PULS    D
                 JSR     print_uint16    ; 発生行番号を 10 進で出力
 iet_eol:
-                ; 末尾に改行は付けない。次に出る "Ready" が先頭に改行を持ち、
-                ; それが本表示行の終端を兼ねる。ここで改行するとエラー表示と
-                ; Ready の間に余分な空行が入る。
+                ; 末尾に改行は付けない。
                 JMP     warm_start
 
 ;------------------------------------------------------------------------------
-; CIRCLE の塗りつぶし (第 7 引数 F) —
-;   (7t_save_list.inc の CIRCLE 実装から呼ぶ。本プールに
-;    配置。参照はラベル経由のみで位置依存なし)
+; CIRCLE の塗りつぶし (第 7 引数 F)
 ;
 ; CIRCLE 第 7 引数 F は円弧の内部を塗る指定である (参考書籍)。塗りは輪郭を
 ; 別に引かず、64 頂点多角形の各辺を画素単位で歩き、通過画素ごとに
@@ -1401,21 +1301,10 @@ iet_eol:
 ; 端点は始点・終点とも発行するので、頂点は隣接する 2 辺で重複して送られる。
 ;
 ; 辺の内挿規則:
-;   辺を覆う画素数を N = max(|dx|,|dy|) + 1 とし、X 軸と Y 軸それぞれに
-;   独立した加算器を回す。各軸の増分はその軸が覆う画素数 |d|+1、法は N、
-;   初期値は X 軸が |dx|・Y 軸が 0。1 画素進むごとに 誤差 += 増分 し、
-;   誤差 >= N になった軸だけを 1 画素動かして 誤差 -= N する。
-;   主軸 (差の大きい側) は増分が N に等しいので毎回必ず動き、従軸だけが
-;   間引かれる。初期値は X 軸だけ |dx| にするので、主軸が横のときと縦のときで
-;   従軸の折れる位置が半画素ずれる。各軸は差分 (|dx|,|dy|) ではなく
-;   画素数 (|dx|+1,|dy|+1) で刻む。
+;   辺を覆う画素数を N = max(|dx|,|dy|) + 1 とし、X 軸と Y 軸それぞれに加算器を回す。
+;   増分はその軸の画素数、初期値は X 軸が |dx|・Y 軸が 0。誤差 >= N になった軸だけを動かす。
 ;------------------------------------------------------------------------------
 
-; CIRCLE 第 7 引数 (F/N) を解析し、描画の型を決める。
-;   F あり: 全線分の始点を中心へ固定し、頂点の退避先を走査元 CFL_AX にする。
-;   省略/N: 隣接頂点どうしを結ぶ (退避先 = 線分の始点欄)。
-;   第 8 引数 (機能) は受理して読み飛ばす。
-;   入出力: X = 本文ポインタ。壊す: A,B,U
 ; DEFSTR / DEFINT / DEFSNG / DEFDBL — 既定型表の更新
 ;   トークン化後の構文 (A-Z または A,B) を処理する。型番号は
 ;   SNG=0 / INT=1 / DBL=2 / STR=3。
@@ -1434,12 +1323,9 @@ idf_go:
                 PSHS    B
                 JSR     skip_sp_x
 idf_item:
-                ; A = 範囲先頭の添字, U = 表の該当欄 (ここへ展開)
 ;------------------------------------------------------------------------------
 ; idf_chku — DEF 型宣言文の「文字の範囲」の先頭 1 字を検査し、既定型表の欄を指す。
 ;   入力: A = 英字。出力: A = 添字 (0-25), U = DEFTYPE の該当欄。
-;   (呼出元 impl_defint 等の区画に残量が無いため本プールへ置く。参照はラベル
-;    経由のみで位置依存はない)
 ;------------------------------------------------------------------------------
 idf_chku:
                 JSR     chk_alpha
@@ -1480,19 +1366,20 @@ idf_done:
 ; deftype_reset — 既定型表 (DEFTYPE, 26B) を全て SNG(=0) に戻す。
 ;   全変数を消去する場面 (CLEAR / RUN / NEW / 行入力 / コールドスタート) から
 ;   vars_clear_all 経由で呼ぶ。X を保つのが呼出規約 (CLEAR は本文ポインタを
-;   X に載せたまま呼ぶ)。破壊: B。
+;   X に載せたまま呼ぶ)。破壊: D。
 deftype_reset:
                 PSHS    X
-                LDX     #DEFTYPE
-                LDB     #26
+                LDX     #DEFTYPE+26     ; 表の末尾から
+                CLRA
+                CLRB
 dtr_lp:
-                CLR     ,X+
-                DECB
+                STD     ,--X            ; 2 文字ぶんずつ 0 を書く (13 回)
+                CMPX    #DEFTYPE
                 BNE     dtr_lp
                 PULS    X,PC
 
 
-cir_fill_arg:
+cir_fill_arg:                           ; CIRCLE 第 7 引数 (F/N) を解析し描画の型を決める (第 8 引数は呼出側が読む)。壊す: A,B,U
                 LDU     #SUBCMD_P3          ; 既定 = 輪郭 (前頂点を線分の始点へ)
                 JSR     skip_comma
                 BCC     cfg_set
@@ -1593,9 +1480,7 @@ cfa_st:
 ; kw_idx / fn_idx — 予約語表の先頭字索引 (各 A-Z 26 欄 × 2 バイト)
 ;   行変換器の照合開始位置を語頭の英字で群へ絞る (照合コストの主対策)。
 ;   kw_idx は命令語表 kw_tbl、fn_idx は関数語表 kw_fn_tbl に対応する。
-;   各欄の意味 (変位の詰込み形式) は scripts/gen_7t_keywords.py の kwidx_rows を
-;   参照。予約語表と同期生成する (手書き禁止。表の並びが変わると値が変わる)。
-;   本プールへ配置 (参照はラベル経由のみで位置依存なし)。
+;   各欄は変位の詰込み形式で、予約語表と機械生成する。
 ;   索引引きの本体 (tmk_idx) は 7t_expr.inc。kw_idx より fn_idx が後方に
 ;   あることに tmk_idx の呼出元判定 (CMPX #fn_idx) が依存する (並びを保つこと)。
 ;==============================================================================

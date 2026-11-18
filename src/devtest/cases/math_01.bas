@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM 数値関数 (丸め系): ABS / SGN / INT / FIX / CINT / CSNG / CDBL。
 10 PRINT ABS(-5.5);SGN(-3);SGN(0.5);SGN(0);SGN(-0.0001)
 20 PRINT INT(-3.7);FIX(-3.7);CINT(3.7);INT(2.5);FIX(2.5)

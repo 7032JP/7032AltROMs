@@ -1,7 +1,7 @@
 ; SPDX-License-Identifier: MIT
 ; Copyright (c) 2026 Naomitsu.Tsugiiwa
 ;==============================================================================
-; AltROMs subsys_a.rom — FM77AV サブシステム Type-A ROM (独立実装)
+; AltROMs subsys_a.rom — FM77AV サブシステム Type-A ROM
 ;
 ; 8192 byte 固定。サブ CPU $E000-$FFFF にマップ ($FD13=1 で選択。選択と同時に
 ; サブ CPU はリセットされ本 ROM の RESET ベクタから走る)。選択中、サブ CPU の
@@ -13,7 +13,7 @@
 ; $39 (描画範囲の設定と枠付きの矩形の塗り) を持ち、$15 LINE・$18 PAINT・$39 を色 1 バイトの並びで受けて
 ; ALU とラインドロワで 640×200 の画面に描く (動作観察)。
 ;
-; 実体は subsys_c (FM-7 互換サブシステムモニタ) と共用のコマンド処理本体を
+; 実体は subsys_c (FM-7 用のサブシステム ROM) と共用のコマンド処理本体を
 ; SUBSYS_AV 条件で AV 向けにアセンブルしたものである:
 ;   - フォント区画 ($D800-$DFFF) は ROM に含めない (CG バンク領域が同一 font.bin を
 ;     同アドレスレイアウトで供給するため、font_base=$D800 参照はそのまま機能)

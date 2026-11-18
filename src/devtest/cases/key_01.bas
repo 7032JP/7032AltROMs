@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM KEY: 割り当て・空文字列による消去・KEY LIST の一覧表示 (PF<番号> に
 2 REM 続けて桁 9 から割り当て文字列。割り当てのないキーは PF<番号> のみ)。
 3 REM KEY ON / KEY OFF は受け付けず Syntax Error (誤り 2) になる。

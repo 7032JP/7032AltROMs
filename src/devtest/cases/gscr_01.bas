@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM 画面比較: PSET (色番号 0-7 の点、色省略時は COLOR の色) と PRESET
 2 REM (背景色で消す)。塗り箱の中の 1 点を PRESET で消す。
 3 REM 描画を残すため終端は無限ループ。

@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM 画面比較: CIRCLE。縦横比 1 の真円、既定の縦横比 (楕円)、縦横比 0.5、
 2 REM 円弧 (開始 0 終了 0.25)、扇形の塗りつぶし (F)、N は輪郭のみ。
 10 CLS

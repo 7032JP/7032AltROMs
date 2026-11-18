@@ -1,7 +1,7 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM SUBOUT (16) は呼び手のデータバッファをそのまま送り、書き換えない。
 2 REM バッファ +1 の下位 7 ビットを 1 にして INKEY ($29、待たない) を送る。
-3 REM 続けて RCBLNH = 261 (下位バイトは 5) で呼び、範囲外の誤りになること。
+3 REM 続けて データバイト数 (+4・+5) = 261 (下位バイトは 5) で呼び、範囲外の誤りになること。
 10 FOR I=0 TO 14:READ B:POKE &H6000+I,B:NEXT
 20 POKE &H6110,0:POKE &H6111,127:POKE &H6112,&H29:POKE &H6113,0:POKE &H6114,0
 30 POKE &H6100,16:POKE &H6101,255:POKE &H6102,&H61:POKE &H6103,&H10:POKE &H6104,0:POKE &H6105,5

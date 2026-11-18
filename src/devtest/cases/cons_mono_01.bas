@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 1 REM CONSOLE の第 4 引数 (コンソールカラースイッチ)。1 にすると文字は
 2 REM COLOR の指定にかかわらず緑 (4) のみで表示される
 3 REM (参考書籍)。色は画面照合

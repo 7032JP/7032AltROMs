@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 FOR I=1 TO 3
 20 FOR J=1 TO 3
 30 PRINT I*10+J;

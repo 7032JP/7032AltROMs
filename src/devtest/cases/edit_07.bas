@@ -1,4 +1,4 @@
-0 REM AltROMs test - MIT, own work.
+0 REM AltROMs test (MIT)
 10 INPUT A$
 20 CLS
 30 PRINT LEN(A$)
