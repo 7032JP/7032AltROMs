@@ -678,6 +678,7 @@ ird2_findline:
                 ; DATLINE から DATA 文を線形に探索。候補行を作業列へ変換し、
                 ; 既存のトークン走査 (TOK_DATA 探し) をそのまま作業列上で使う。
                 LDX     DATLINE
+ird2_findrec:
                 LDD     ,X
                 BEQ     ird2_ood        ; next_ptr=0 → プログラム末尾 → Out Of Data
                 JSR     exec_load_rec
@@ -702,10 +703,17 @@ ird2_got:
 ird2_ret:
                 RTS
 ird2_nextrec:
+                ; 次の行へ移るので、前の行の中の読み位置 DATPTR は捨てて未探索 (0) に戻す。
+                ;   移った先の値で誤りになっても、次の READ はその行の先頭から探し直し、
+                ;   前の行の位置を新しい行に当てはめない (同じ行の中の誤りと同じく、
+                ;   誤った値をもう一度読む)。読めれば ird2_got が新しい位置を記す。
+                CLRA
+                CLRB
+                STD     DATPTR
                 LDX     DATLINE
                 LDX     ,X              ; next_ptr
                 STX     DATLINE
-                BRA     ird2_findline
+                BRA     ird2_findrec
 ird2_ood:
                 LDB     #4              ; Out Of Data
                 JMP     impl_error_handler

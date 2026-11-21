@@ -148,7 +148,7 @@ iep_stmt_gate:
                 ; 分岐判定へ落ちる (X = 文の先頭)
 ; iep_jump_gate — INTERVAL 発生時の分岐判定と GOSUB 突入
 ;   入口は iep_stmt_gate (上) から落ちて来る 1 つ。文の切れ目 (iep_stmt_new)
-;   と行ジャンプ直後 (impl_jump_to_line、7t_expr.inc) の両方がここを通る
+;   と行ジャンプ直後 (impl_jump_to_line、7t_statements.inc) の両方がここを通る
 ;   いずれも「X の文を実行する直前」であり、分岐時は X を復帰 IP として
 ;   GOSUB フレームを積み、登録行へ制御を移す (RETURN で X の文からやり直す)。
 ;   分岐しないときは X を温存して RTS (U は壊す)。

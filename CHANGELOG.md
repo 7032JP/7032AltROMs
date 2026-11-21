@@ -1,5 +1,13 @@
 # 更新履歴
 
+## v1.0.12 — 2026-11-21
+
+- BASIC ROM（`7tbasic3`）で、SIN・COS・TAN・ATN が 0 に近い値（0.0001 前後）で誤った値を返すことがあった点を直しました。`1-1E-8` のような、結果がわずかに 1 を下回る加減算も正しい値になります。
+- BASIC ROM で、ON ～ GOTO が無い行番号を選んだときに、何も表示せずにプログラムが終わっていた点を直しました。GOTO と同じく Undefined Line Number になり、ON ERROR GOTO で扱えます。
+- BASIC ROM で、READ が次の DATA の行へ移った先で誤りになった後、続く READ がずれた位置の値を読んでいた点を直しました。同じ行の中で誤りになったときと同じく、誤った値から読み直します。
+- [README.md](README.md) に「実機との主な違い（制限事項）」の項を設け、[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) を制限事項と回避策の短い表にしました。機能ごとの詳しい対応表は [docs/COMPATIBILITY_DETAILS.md](docs/COMPATIBILITY_DETAILS.md) に分けました。
+- [docs/LEGAL.md](docs/LEGAL.md) の字形の説明から、集計の細部を外しました。ROM に変わりはありません。
+
 ## v1.0.11 — 2026-11-18
 
 - BASIC ROM（`7tbasic3`）で、DEF FN、VAL、数値の表示、AND、ASC、INPUT$、RIGHT$、DATE$、ERL、PRINT、PLAY、WHILE の動作を直しました。同じ名前の関数の再定義は Duplicate Definition になり、文字列定数の引数は正しく渡ります。AND は 2 つ以上つなげます。

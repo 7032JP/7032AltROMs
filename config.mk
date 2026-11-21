@@ -30,7 +30,7 @@ SCRIPTS = scripts
 
 # 配布物のバージョン
 #   公開時のタグ名は "v$(DIST_VERSION)" を想定する。
-DIST_VERSION = 1.0.11
+DIST_VERSION = 1.0.12
 
 # 第三者のビットマップフォント (パブリックドメイン宣言つき) の同梱先
 #   16x16 漢字フォント ROM の字形の入力に用います (docs/LEGAL.md §9)。

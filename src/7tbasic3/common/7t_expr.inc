@@ -196,17 +196,8 @@ ifl_fail:
                 ORCC    #$04            ; Z=1
                 RTS
 
-; impl_jump_to_line: 行レコード先頭 X へ実行を移す。
-;   入力: X = 行レコード先頭。CURLINE_PTR/CURLIN を更新し、行本文 (原文) を
-;   実行用行バッファへ変換して CURIP = 変換済み本文の先頭。X も同位置へ。
-;   GOTO/GOSUB/ON 後に行末で iep_next_line が正しい次行を辿れるようにする。
-;   CURLIN も飛び先の行番号へ更新する。
-impl_jump_to_line:
-                JSR     exec_conv_line  ; 変換 + CURLINE_PTR/CURLIN 更新, X=作業列先頭
-                STX     CURIP
-                ; 行ジャンプでも事象の発生と BREAK キーを見る (文の切れ目を通らないので、
-                ;   iep_stmt_gate を同じ手順で通す)。
-                JMP     iep_stmt_gate   ; X = 飛び先の文頭 (分岐すれば X はハンドラ行へ)
+; impl_jump_to_line (行レコード先頭 X へ実行を移す) は GOTO の本体の直後に置く
+; (7t_statements.inc の igo_goto。GOTO はそこへ流れ込む)。
 
 
 ;==============================================================================

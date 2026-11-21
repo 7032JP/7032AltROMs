@@ -48,7 +48,7 @@
 FM77AV 系のサブ CPU 側で使う 3 本です。Type-A / Type-B の位置に置く 2 本は、どちらも FM-7 系と同じコマンドの授受を担います。
 
 - **subsys_a**（Type-A の位置）— FM-7 系と同じ表示・キー入力・図形描画のコマンドを受け持ちます。コマンド処理の本体は subsys_c と共通です。
-- **subsys_b**（Type-B の位置）— コマンド処理の本体は subsys_a・subsys_c と共通ですが、画面は 320×200／4096 色のアナログモード（1 画素の色を B・R・G 各 4 ビットで扱う 12 面）で描きます。色の指定形式が異なるコマンドがあり、バイト列は subsys_a と同じではありません（[COMPATIBILITY.md](COMPATIBILITY.md) §1.1）。
+- **subsys_b**（Type-B の位置）— コマンド処理の本体は subsys_a・subsys_c と共通ですが、画面は 320×200／4096 色のアナログモード（1 画素の色を B・R・G 各 4 ビットで扱う 12 面）で描きます。色の指定形式が異なるコマンドがあり、バイト列は subsys_a と同じではありません（[COMPATIBILITY_DETAILS.md](COMPATIBILITY_DETAILS.md) §1）。
 - **subsyscg** — 8x8 ANK フォントを 4 バンク分に置いて供給します。リセットベクタは持ちません。フォントは subsys_c と同じものです（[LEGAL.md](LEGAL.md) §8）。
 
 コマンド番号は [BUILD.md](BUILD.md) §6.2 にあります。

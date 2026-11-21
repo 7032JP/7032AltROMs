@@ -1,0 +1,12 @@
+0 REM AltROMs test (MIT)
+1 REM ON GOTO で選んだ行番号の行が無いときは Undefined Line Number (誤り 8)。
+2 REM 行番号の数字の間の空白は行番号の切れ目で、4 0 は行 4 を指す。
+3 REM GOTO・ON GOSUB・IF THEN 行番号と同じ扱い。
+10 ON ERROR GOTO 900
+20 ON 1 GOTO 4 0
+30 ON 2 GOTO 50,4
+40 ON 1 GOSUB 4 0
+45 IF 1 THEN 4 0
+50 GOTO 4 0
+60 PRINT "END":END
+900 PRINT "E";ERR;ERL:RESUME NEXT

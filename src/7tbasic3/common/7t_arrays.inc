@@ -146,13 +146,7 @@ iif_target:
                 BLO     iift_ret        ; 数字でない → 文/行末 → 復帰
                 CMPA    #'9'
                 BHI     iift_ret
-iift_goto:
-                JSR     impl_eval_linenum
-                JSR     impl_find_line
-                BEQ     iift_undef
-                JMP     impl_jump_to_line
-iift_undef:
-                JMP     errc_8        ; Undefined line
+                JMP     igo_goto        ; 行番号へ飛ぶ (GOTO と同じ本体。無い行は Undefined Line Number)
 iift_ret:
                 RTS
 

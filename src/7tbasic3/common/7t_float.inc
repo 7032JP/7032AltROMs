@@ -872,6 +872,7 @@ fac_aligned:
                 ADCA    fa_b
                 STD     fa_a
                 BCC     fac_round           ; あふれ無し → 先頭1 は保持済
+fac_carry:
                 ROR     fa_a                ; あふれ: C(=1)を最上位へ入れ右1シフト
                 ROR     fa_a+1
                 ROR     fa_a+2
@@ -940,9 +941,11 @@ fac_round:
                 BNE     fac_store_a
                 INC     fa_a
                 BNE     fac_store_a
-                ROR     fa_a                ; 丸めで桁上がり → 右1シフト+指数++
-                ROR     fa_a+1
-                ROR     fa_a+2
+                ; 丸めで仮数の全桁が繰り上がった ($FFFFFF+1。仮数は 0 に巻き戻っている)。
+                ; 仮数の先頭の 1 だけを立て直し、指数を 1 つ上げて格納へ進む
+                ; (符号は保持し、指数のあふれは格納で判定する)。
+                LDA     #$80
+                STA     fa_a
                 INC     fa_exp
 fac_store_a:
                 LDA     fa_exp
